@@ -1,0 +1,125 @@
+version: '3.8'
+
+services:
+  mapaturbo_postgres:
+    image: pgvector/pgvector:pg16
+    container_name: mapaturbo_postgres
+    environment:
+      POSTGRES_USER: mapaturbo
+      POSTGRES_PASSWORD: mapaturbo_password
+      POSTGRES_DB: mapaturbo
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mapaturbo -d mapaturbo"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  mapaturbo_redis:
+    image: redis:7-alpine
+    container_name: mapaturbo_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  mapaturbo_minio:
+    image: minio/minio
+    container_name: mapaturbo_minio
+    environment:
+      MINIO_ROOT_USER: mapaturbo
+      MINIO_ROOT_PASSWORD: mapaturbo_password
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  mapaturbo_api:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+      target: api
+    container_name: mapaturbo_api
+    restart: always
+    environment:
+      - NODE_ENV=development
+      - APP_ENV=development
+      - SERVER_PORT=8080
+      - DATABASE_URL=postgres://mapaturbo:mapaturbo_password@mapaturbo_postgres:5432/mapaturbo?sslmode=disable
+      - REDIS_ADDR=mapaturbo_redis:6379
+      - JWT_SECRET=change_me_to_a_secure_jwt_secret_key_32_bytes_or_more
+      - ENCRYPTION_KEY=change_me_to_exactly_32_bytes_key_
+      - BOOTSTRAP_ADMIN_EMAIL=admin@admin.com
+      - BOOTSTRAP_ADMIN_PASSWORD=@Admin2328
+      - MINIO_ENDPOINT=mapaturbo_minio:9000
+      - MINIO_ACCESS_KEY=mapaturbo
+      - MINIO_SECRET_KEY=mapaturbo_password
+      - MINIO_BUCKET=mapaturbo-files
+      - MINIO_USE_SSL=false
+    ports:
+      - "8080:8080"
+    depends_on:
+      mapaturbo_postgres:
+        condition: service_healthy
+      mapaturbo_redis:
+        condition: service_healthy
+      mapaturbo_minio:
+        condition: service_healthy
+
+  mapaturbo_worker:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+      target: worker
+    container_name: mapaturbo_worker
+    restart: always
+    environment:
+      - NODE_ENV=development
+      - APP_ENV=development
+      - DATABASE_URL=postgres://mapaturbo:mapaturbo_password@mapaturbo_postgres:5432/mapaturbo?sslmode=disable
+      - REDIS_ADDR=mapaturbo_redis:6379
+      - JWT_SECRET=change_me_to_a_secure_jwt_secret_key_32_bytes_or_more
+      - ENCRYPTION_KEY=change_me_to_exactly_32_bytes_key_
+      - MINIO_ENDPOINT=mapaturbo_minio:9000
+      - MINIO_ACCESS_KEY=mapaturbo
+      - MINIO_SECRET_KEY=mapaturbo_password
+      - MINIO_BUCKET=mapaturbo-files
+      - MINIO_USE_SSL=false
+    depends_on:
+      mapaturbo_postgres:
+        condition: service_healthy
+      mapaturbo_redis:
+        condition: service_healthy
+      mapaturbo_minio:
+        condition: service_healthy
+
+  mapaturbo_web:
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+    container_name: mapaturbo_web
+    restart: always
+    ports:
+      - "5173:5173"
+    depends_on:
+      - mapaturbo_api
+
+volumes:
+  postgres_data:
+  redis_data:
+  minio_data:

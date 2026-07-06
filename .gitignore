@@ -1,0 +1,40 @@
+# Environment variables
+.env
+.env.local
+.env.production
+
+# Node / Frontend
+node_modules/
+dist/
+build/
+.eslintcache
+*.log
+
+# Go / Backend
+backend/bin/
+backend/tmp/
+backend/dist/
+backend/backend
+backend/api
+backend/worker
+main
+worker
+api
+migrate
+*.exe
+
+# Docker data directories (locally mounted, if any)
+docker/postgres_data/
+docker/redis_data/
+docker/minio_data/
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp

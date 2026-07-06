@@ -1,0 +1,122 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    networks:
+      - mapaturbo_net
+    environment:
+      POSTGRES_USER: mapaturbo
+      POSTGRES_PASSWORD: mapaturbo_password
+      POSTGRES_DB: mapaturbo
+    volumes:
+      - postgres_prod_data:/var/lib/postgresql/data
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+
+  redis:
+    image: redis:7-alpine
+    networks:
+      - mapaturbo_net
+    volumes:
+      - redis_prod_data:/data
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+
+  minio:
+    image: minio/minio
+    networks:
+      - mapaturbo_net
+    environment:
+      MINIO_ROOT_USER: mapaturbo
+      MINIO_ROOT_PASSWORD: mapaturbo_password
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio_prod_data:/data
+    deploy:
+      replicas: 1
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.minio.rule=Host(`s3.mapaturbo.local`)"
+        - "traefik.http.routers.minio.entrypoints=web"
+        - "traefik.http.services.minio.loadbalancer.server.port=9000"
+        - "traefik.http.routers.minio_console.rule=Host(`console-s3.mapaturbo.local`)"
+        - "traefik.http.routers.minio_console.entrypoints=web"
+        - "traefik.http.services.minio_console.loadbalancer.server.port=9001"
+
+  api:
+    image: william/mapaturbo-api:latest
+    networks:
+      - mapaturbo_net
+    environment:
+      - NODE_ENV=production
+      - APP_ENV=production
+      - SERVER_PORT=8080
+      - DATABASE_URL=postgres://mapaturbo:mapaturbo_password@postgres:5432/mapaturbo?sslmode=disable
+      - REDIS_ADDR=redis:6379
+      - JWT_SECRET=production_jwt_secret_change_me
+      - ENCRYPTION_KEY=production_encryption_key_change_
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=mapaturbo
+      - MINIO_SECRET_KEY=mapaturbo_password
+      - MINIO_BUCKET=mapaturbo-files
+      - MINIO_USE_SSL=false
+    deploy:
+      replicas: 2
+      update_config:
+        parallelism: 1
+        delay: 10s
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.api.rule=Host(`api.mapaturbo.local`)"
+        - "traefik.http.routers.api.entrypoints=web"
+        - "traefik.http.services.api.loadbalancer.server.port=8080"
+
+  worker:
+    image: william/mapaturbo-worker:latest
+    networks:
+      - mapaturbo_net
+    environment:
+      - NODE_ENV=production
+      - APP_ENV=production
+      - DATABASE_URL=postgres://mapaturbo:mapaturbo_password@postgres:5432/mapaturbo?sslmode=disable
+      - REDIS_ADDR=redis:6379
+      - JWT_SECRET=production_jwt_secret_change_me
+      - ENCRYPTION_KEY=production_encryption_key_change_
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=mapaturbo
+      - MINIO_SECRET_KEY=mapaturbo_password
+      - MINIO_BUCKET=mapaturbo-files
+      - MINIO_USE_SSL=false
+    deploy:
+      replicas: 1
+      update_config:
+        parallelism: 1
+        delay: 10s
+
+  web:
+    image: william/mapaturbo-web:latest
+    networks:
+      - mapaturbo_net
+    deploy:
+      replicas: 2
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.web.rule=Host(`mapaturbo.local`)"
+        - "traefik.http.routers.web.entrypoints=web"
+        - "traefik.http.services.web.loadbalancer.server.port=5173"
+
+networks:
+  mapaturbo_net:
+    driver: overlay
+
+volumes:
+  postgres_prod_data:
+  redis_prod_data:
+  minio_prod_data:
