@@ -123,7 +123,22 @@ type CreateSubscriptionParams struct {
 	TrialEnd               pgtype.Timestamptz
 }
 
-func (q *Queries) CreateSubscription(ctx context.Context, arg CreateSubscriptionParams) (Subscription, error) {
+type CreateSubscriptionRow struct {
+	ID                     pgtype.UUID
+	OrganizationID         pgtype.UUID
+	PlanID                 pgtype.UUID
+	Status                 string
+	PaymentProvider        string
+	ExternalSubscriptionID pgtype.Text
+	CurrentPeriodStart     pgtype.Timestamptz
+	CurrentPeriodEnd       pgtype.Timestamptz
+	TrialStart             pgtype.Timestamptz
+	TrialEnd               pgtype.Timestamptz
+	CreatedAt              pgtype.Timestamptz
+	UpdatedAt              pgtype.Timestamptz
+}
+
+func (q *Queries) CreateSubscription(ctx context.Context, arg CreateSubscriptionParams) (CreateSubscriptionRow, error) {
 	row := q.db.QueryRow(ctx, createSubscription,
 		arg.OrganizationID,
 		arg.PlanID,
@@ -135,7 +150,7 @@ func (q *Queries) CreateSubscription(ctx context.Context, arg CreateSubscription
 		arg.TrialStart,
 		arg.TrialEnd,
 	)
-	var i Subscription
+	var i CreateSubscriptionRow
 	err := row.Scan(
 		&i.ID,
 		&i.OrganizationID,
@@ -190,9 +205,24 @@ FROM subscriptions
 WHERE organization_id = $1 LIMIT 1
 `
 
-func (q *Queries) GetSubscriptionByOrg(ctx context.Context, organizationID pgtype.UUID) (Subscription, error) {
+type GetSubscriptionByOrgRow struct {
+	ID                     pgtype.UUID
+	OrganizationID         pgtype.UUID
+	PlanID                 pgtype.UUID
+	Status                 string
+	PaymentProvider        string
+	ExternalSubscriptionID pgtype.Text
+	CurrentPeriodStart     pgtype.Timestamptz
+	CurrentPeriodEnd       pgtype.Timestamptz
+	TrialStart             pgtype.Timestamptz
+	TrialEnd               pgtype.Timestamptz
+	CreatedAt              pgtype.Timestamptz
+	UpdatedAt              pgtype.Timestamptz
+}
+
+func (q *Queries) GetSubscriptionByOrg(ctx context.Context, organizationID pgtype.UUID) (GetSubscriptionByOrgRow, error) {
 	row := q.db.QueryRow(ctx, getSubscriptionByOrg, organizationID)
-	var i Subscription
+	var i GetSubscriptionByOrgRow
 	err := row.Scan(
 		&i.ID,
 		&i.OrganizationID,
@@ -491,7 +521,22 @@ type UpdateSubscriptionParams struct {
 	TrialEnd               pgtype.Timestamptz
 }
 
-func (q *Queries) UpdateSubscription(ctx context.Context, arg UpdateSubscriptionParams) (Subscription, error) {
+type UpdateSubscriptionRow struct {
+	ID                     pgtype.UUID
+	OrganizationID         pgtype.UUID
+	PlanID                 pgtype.UUID
+	Status                 string
+	PaymentProvider        string
+	ExternalSubscriptionID pgtype.Text
+	CurrentPeriodStart     pgtype.Timestamptz
+	CurrentPeriodEnd       pgtype.Timestamptz
+	TrialStart             pgtype.Timestamptz
+	TrialEnd               pgtype.Timestamptz
+	CreatedAt              pgtype.Timestamptz
+	UpdatedAt              pgtype.Timestamptz
+}
+
+func (q *Queries) UpdateSubscription(ctx context.Context, arg UpdateSubscriptionParams) (UpdateSubscriptionRow, error) {
 	row := q.db.QueryRow(ctx, updateSubscription,
 		arg.ID,
 		arg.PlanID,
@@ -503,7 +548,7 @@ func (q *Queries) UpdateSubscription(ctx context.Context, arg UpdateSubscription
 		arg.TrialStart,
 		arg.TrialEnd,
 	)
-	var i Subscription
+	var i UpdateSubscriptionRow
 	err := row.Scan(
 		&i.ID,
 		&i.OrganizationID,

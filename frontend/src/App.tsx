@@ -22,6 +22,8 @@ import ManageUsers from './pages/admin/ManageUsers';
 import ManageSettings from './pages/admin/ManageSettings';
 import ManageSubscriptions from './pages/admin/ManageSubscriptions';
 import ViewAuditLogs from './pages/admin/ViewAuditLogs';
+import ManageAiProviders from './pages/admin/ManageAiProviders';
+import ManagePayments from './pages/admin/ManagePayments';
 
 // Layouts
 import AppLayout from './layouts/AppLayout';
@@ -82,6 +84,8 @@ export default function App() {
           <Route path="settings" element={<ManageSettings />} />
           <Route path="subscriptions" element={<ManageSubscriptions />} />
           <Route path="audit-logs" element={<ViewAuditLogs />} />
+          <Route path="ai-providers" element={<ManageAiProviders />} />
+          <Route path="payments" element={<ManagePayments />} />
         </Route>
 
         {/* Fallback */}

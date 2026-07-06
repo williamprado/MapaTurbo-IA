@@ -22,6 +22,8 @@ import (
 	"mapaturbo-ia/internal/settings"
 	"mapaturbo-ia/internal/audit"
 	"mapaturbo-ia/internal/uploads"
+	"mapaturbo-ia/internal/payments"
+	"mapaturbo-ia/internal/ai"
 	"mapaturbo-ia/pkg/config"
 	dbpkg "mapaturbo-ia/pkg/database"
 	"mapaturbo-ia/pkg/logger"
@@ -113,6 +115,8 @@ func main() {
 	settingsHandler := settings.NewHandler(pool)
 	auditHandler := audit.NewHandler(pool)
 	uploadHandler := uploads.NewHandler(pool, storage.Client)
+	payHandler := payments.NewHandler(pool, cfg.EncryptionKey)
+	aiHandler := ai.NewHandler(pool, cfg.EncryptionKey)
 
 	r.GET("/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
@@ -121,6 +125,7 @@ func main() {
 		})
 	})
 	r.GET("/plans/public", planHandler.ListPublic)
+	r.POST("/webhooks/asaas", payHandler.HandleAsaasWebhook)
 
 	r.POST("/auth/register", authHandler.Register)
 	r.POST("/auth/login", authHandler.Login)
@@ -139,6 +144,8 @@ func main() {
 			tenantGroup.GET("/uploads", uploadHandler.List)
 			tenantGroup.GET("/uploads/:id", uploadHandler.GetByID)
 			tenantGroup.GET("/credits/balance", orgHandler.GetBalance)
+			tenantGroup.POST("/billing/checkout", payHandler.CreateCheckout)
+			tenantGroup.GET("/billing/invoices", payHandler.ListInvoices)
 		}
 
 		adminGroup := authGroup.Group("/admin")
@@ -176,6 +183,19 @@ func main() {
 
 			// Audit Logs admin routes
 			adminGroup.GET("/audit-logs", auditHandler.List)
+
+			// AI Providers routes
+			adminGroup.GET("/ai-providers", aiHandler.ListProviders)
+			adminGroup.POST("/ai-providers", aiHandler.CreateProvider)
+			adminGroup.PATCH("/ai-providers/:id", aiHandler.UpdateProvider)
+			adminGroup.POST("/ai-providers/:id/test", aiHandler.TestProviderConnection)
+
+			// Payment Providers routes
+			adminGroup.GET("/payments/providers", payHandler.ListPaymentProvidersAdmin)
+			adminGroup.PATCH("/payments/providers/:id", payHandler.UpdatePaymentProviderAdmin)
+			adminGroup.GET("/payments/invoices", payHandler.ListInvoicesAdmin)
+			adminGroup.GET("/payments/transactions", payHandler.ListTransactionsAdmin)
+			adminGroup.GET("/payments/webhook-events", payHandler.ListWebhookEventsAdmin)
 		}
 	}
 

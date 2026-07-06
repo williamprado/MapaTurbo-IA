@@ -354,11 +354,11 @@ func (h *Handler) CreateManual(c *gin.Context) {
 
 	// Check if organization has subscription already
 	existingSub, err := txQueries.GetSubscriptionByOrg(c.Request.Context(), orgID)
-	var sub database.Subscription
+	var subID pgtype.UUID
 
 	if err == nil {
 		// Update existing
-		sub, err = txQueries.UpdateSubscription(c.Request.Context(), database.UpdateSubscriptionParams{
+		subRow, errVal := txQueries.UpdateSubscription(c.Request.Context(), database.UpdateSubscriptionParams{
 			ID:                     existingSub.ID,
 			PlanID:                 planID,
 			Status:                 "ACTIVE",
@@ -367,9 +367,13 @@ func (h *Handler) CreateManual(c *gin.Context) {
 			CurrentPeriodStart:     pgtype.Timestamptz{Time: time.Now(), Valid: true},
 			CurrentPeriodEnd:       pgtype.Timestamptz{Time: time.Now().AddDate(0, 0, req.DurationDays), Valid: true},
 		})
+		err = errVal
+		if err == nil {
+			subID = subRow.ID
+		}
 	} else {
 		// Create new
-		sub, err = txQueries.CreateSubscription(c.Request.Context(), database.CreateSubscriptionParams{
+		subRow, errVal := txQueries.CreateSubscription(c.Request.Context(), database.CreateSubscriptionParams{
 			OrganizationID:         orgID,
 			PlanID:                 planID,
 			Status:                 "ACTIVE",
@@ -378,6 +382,10 @@ func (h *Handler) CreateManual(c *gin.Context) {
 			CurrentPeriodStart:     pgtype.Timestamptz{Time: time.Now(), Valid: true},
 			CurrentPeriodEnd:       pgtype.Timestamptz{Time: time.Now().AddDate(0, 0, req.DurationDays), Valid: true},
 		})
+		err = errVal
+		if err == nil {
+			subID = subRow.ID
+		}
 	}
 
 	if err != nil {
@@ -402,7 +410,7 @@ func (h *Handler) CreateManual(c *gin.Context) {
 
 	// Create Credit Transaction
 	txMeta, _ := json.Marshal(map[string]interface{}{
-		"subscription_id": sub.ID,
+		"subscription_id": subID,
 		"plan_name":       plan.Name,
 	})
 	_, err = txQueries.CreateCreditTransaction(c.Request.Context(), database.CreateCreditTransactionParams{
@@ -429,7 +437,7 @@ func (h *Handler) CreateManual(c *gin.Context) {
 	_ = actorUserID.Scan(actorUserIDStr)
 
 	meta, _ := json.Marshal(map[string]string{
-		"subscription_id": uuidToString(sub.ID),
+		"subscription_id": uuidToString(subID),
 		"organization_id": req.OrganizationID,
 		"plan_name":       plan.Name,
 	})
@@ -438,13 +446,13 @@ func (h *Handler) CreateManual(c *gin.Context) {
 		OrganizationID: orgID,
 		Action:         "SUBSCRIPTION_MANUAL_CREATED",
 		EntityType:     "subscriptions",
-		EntityID:       sub.ID,
+		EntityID:       subID,
 		Metadata:       meta,
 		Ip:             pgtype.Text{String: c.ClientIP(), Valid: true},
 		UserAgent:      pgtype.Text{String: c.GetHeader("User-Agent"), Valid: true},
 	})
 
-	response.Success(c, http.StatusCreated, "Manual subscription created successfully", sub)
+	response.Success(c, http.StatusCreated, "Manual subscription created successfully", gin.H{"id": uuidToString(subID)})
 }
 
 // Helpers

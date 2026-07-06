@@ -160,6 +160,12 @@ type Invoice struct {
 	PaidAt            pgtype.Timestamptz
 	CreatedAt         pgtype.Timestamptz
 	UpdatedAt         pgtype.Timestamptz
+	DueDate           pgtype.Timestamptz
+	BillingType       pgtype.Text
+	InvoiceUrl        pgtype.Text
+	BankSlipUrl       pgtype.Text
+	PixQrCode         pgtype.Text
+	PixCopyPaste      pgtype.Text
 }
 
 type MindMap struct {
@@ -194,6 +200,20 @@ type OrganizationUser struct {
 	UpdatedAt      pgtype.Timestamptz
 }
 
+type PaymentCustomer struct {
+	ID                 pgtype.UUID
+	OrganizationID     pgtype.UUID
+	Provider           string
+	ExternalCustomerID string
+	Name               pgtype.Text
+	Email              pgtype.Text
+	Document           pgtype.Text
+	Phone              pgtype.Text
+	Payload            []byte
+	CreatedAt          pgtype.Timestamptz
+	UpdatedAt          pgtype.Timestamptz
+}
+
 type PaymentProvider struct {
 	ID                  pgtype.UUID
 	Name                string
@@ -202,6 +222,7 @@ type PaymentProvider struct {
 	WebhookSecretSecure pgtype.Text
 	IsActive            bool
 	CreatedAt           pgtype.Timestamptz
+	Mode                string
 }
 
 type PaymentTransaction struct {
@@ -214,6 +235,9 @@ type PaymentTransaction struct {
 	Status                string
 	Payload               []byte
 	CreatedAt             pgtype.Timestamptz
+	PaymentMethod         pgtype.Text
+	PaidAt                pgtype.Timestamptz
+	FailedAt              pgtype.Timestamptz
 }
 
 type Plan struct {
@@ -258,6 +282,10 @@ type Subscription struct {
 	TrialEnd               pgtype.Timestamptz
 	CreatedAt              pgtype.Timestamptz
 	UpdatedAt              pgtype.Timestamptz
+	ExternalCustomerID     pgtype.Text
+	ExternalCheckoutID     pgtype.Text
+	CancelAtPeriodEnd      pgtype.Bool
+	CanceledAt             pgtype.Timestamptz
 }
 
 type SystemSetting struct {

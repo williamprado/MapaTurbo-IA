@@ -12,6 +12,8 @@ export default function AdminLayout() {
     { label: 'Planos', path: '/admin/plans', icon: '📋' },
     { label: 'Usuários', path: '/admin/users', icon: '👥' },
     { label: 'Configurações', path: '/admin/settings', icon: '⚙️' },
+    { label: 'Faturamento', path: '/admin/payments', icon: '💰' },
+    { label: 'Provedores IA', path: '/admin/ai-providers', icon: '🤖' },
     { label: 'Assinaturas', path: '/admin/subscriptions', icon: '💳' },
     { label: 'Auditoria', path: '/admin/audit-logs', icon: '📜' },
   ];

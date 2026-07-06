@@ -182,6 +182,39 @@ func (q *Queries) GetAiActionPrice(ctx context.Context, actionKey string) (AiAct
 	return i, err
 }
 
+const getAiProviderByID = `-- name: GetAiProviderByID :one
+SELECT id, name, slug, api_key_secure, base_url, default_model, text_model, vision_model, audio_model, embedding_model, embedding_dimensions, is_active, priority, is_default, limit_per_minute, limit_per_day, cost_per_credit, created_at, updated_at
+FROM ai_providers
+WHERE id = $1 LIMIT 1
+`
+
+func (q *Queries) GetAiProviderByID(ctx context.Context, id pgtype.UUID) (AiProvider, error) {
+	row := q.db.QueryRow(ctx, getAiProviderByID, id)
+	var i AiProvider
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Slug,
+		&i.ApiKeySecure,
+		&i.BaseUrl,
+		&i.DefaultModel,
+		&i.TextModel,
+		&i.VisionModel,
+		&i.AudioModel,
+		&i.EmbeddingModel,
+		&i.EmbeddingDimensions,
+		&i.IsActive,
+		&i.Priority,
+		&i.IsDefault,
+		&i.LimitPerMinute,
+		&i.LimitPerDay,
+		&i.CostPerCredit,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const getAiProviderBySlug = `-- name: GetAiProviderBySlug :one
 SELECT id, name, slug, api_key_secure, base_url, default_model, text_model, vision_model, audio_model, embedding_model, embedding_dimensions, is_active, priority, is_default, limit_per_minute, limit_per_day, cost_per_credit, created_at, updated_at
 FROM ai_providers
@@ -363,6 +396,52 @@ func (q *Queries) ListAiActionPrices(ctx context.Context) ([]AiActionPrice, erro
 	return items, nil
 }
 
+const listAiProviders = `-- name: ListAiProviders :many
+SELECT id, name, slug, api_key_secure, base_url, default_model, text_model, vision_model, audio_model, embedding_model, embedding_dimensions, is_active, priority, is_default, limit_per_minute, limit_per_day, cost_per_credit, created_at, updated_at
+FROM ai_providers
+ORDER BY priority DESC, name ASC
+`
+
+func (q *Queries) ListAiProviders(ctx context.Context) ([]AiProvider, error) {
+	rows, err := q.db.Query(ctx, listAiProviders)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []AiProvider
+	for rows.Next() {
+		var i AiProvider
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Slug,
+			&i.ApiKeySecure,
+			&i.BaseUrl,
+			&i.DefaultModel,
+			&i.TextModel,
+			&i.VisionModel,
+			&i.AudioModel,
+			&i.EmbeddingModel,
+			&i.EmbeddingDimensions,
+			&i.IsActive,
+			&i.Priority,
+			&i.IsDefault,
+			&i.LimitPerMinute,
+			&i.LimitPerDay,
+			&i.CostPerCredit,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listSystemSettings = `-- name: ListSystemSettings :many
 SELECT key, value, description, is_public, updated_at
 FROM system_settings
@@ -395,6 +474,27 @@ func (q *Queries) ListSystemSettings(ctx context.Context) ([]SystemSetting, erro
 	return items, nil
 }
 
+const setAiProviderDefault = `-- name: SetAiProviderDefault :exec
+UPDATE ai_providers
+SET is_default = TRUE
+WHERE id = $1
+`
+
+func (q *Queries) SetAiProviderDefault(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, setAiProviderDefault, id)
+	return err
+}
+
+const setAllAiProvidersNotDefault = `-- name: SetAllAiProvidersNotDefault :exec
+UPDATE ai_providers
+SET is_default = FALSE
+`
+
+func (q *Queries) SetAllAiProvidersNotDefault(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, setAllAiProvidersNotDefault)
+	return err
+}
+
 const updateAiActionPrice = `-- name: UpdateAiActionPrice :one
 UPDATE ai_action_prices
 SET credits_cost = $2,
@@ -421,6 +521,91 @@ func (q *Queries) UpdateAiActionPrice(ctx context.Context, arg UpdateAiActionPri
 		&i.CreditsCost,
 		&i.IsActive,
 		&i.Metadata,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const updateAiProvider = `-- name: UpdateAiProvider :one
+UPDATE ai_providers
+SET name = COALESCE($2, name),
+    api_key_secure = COALESCE($3, api_key_secure),
+    base_url = COALESCE($4, base_url),
+    default_model = COALESCE($5, default_model),
+    text_model = COALESCE($6, text_model),
+    vision_model = COALESCE($7, vision_model),
+    audio_model = COALESCE($8, audio_model),
+    embedding_model = COALESCE($9, embedding_model),
+    embedding_dimensions = COALESCE($10, embedding_dimensions),
+    is_active = COALESCE($11, is_active),
+    priority = COALESCE($12, priority),
+    is_default = COALESCE($13, is_default),
+    limit_per_minute = COALESCE($14, limit_per_minute),
+    limit_per_day = COALESCE($15, limit_per_day),
+    cost_per_credit = COALESCE($16, cost_per_credit),
+    updated_at = NOW()
+WHERE id = $1
+RETURNING id, name, slug, api_key_secure, base_url, default_model, text_model, vision_model, audio_model, embedding_model, embedding_dimensions, is_active, priority, is_default, limit_per_minute, limit_per_day, cost_per_credit, created_at, updated_at
+`
+
+type UpdateAiProviderParams struct {
+	ID                  pgtype.UUID
+	Name                string
+	ApiKeySecure        string
+	BaseUrl             pgtype.Text
+	DefaultModel        string
+	TextModel           string
+	VisionModel         string
+	AudioModel          string
+	EmbeddingModel      string
+	EmbeddingDimensions int32
+	IsActive            bool
+	Priority            int32
+	IsDefault           bool
+	LimitPerMinute      int32
+	LimitPerDay         int32
+	CostPerCredit       pgtype.Numeric
+}
+
+func (q *Queries) UpdateAiProvider(ctx context.Context, arg UpdateAiProviderParams) (AiProvider, error) {
+	row := q.db.QueryRow(ctx, updateAiProvider,
+		arg.ID,
+		arg.Name,
+		arg.ApiKeySecure,
+		arg.BaseUrl,
+		arg.DefaultModel,
+		arg.TextModel,
+		arg.VisionModel,
+		arg.AudioModel,
+		arg.EmbeddingModel,
+		arg.EmbeddingDimensions,
+		arg.IsActive,
+		arg.Priority,
+		arg.IsDefault,
+		arg.LimitPerMinute,
+		arg.LimitPerDay,
+		arg.CostPerCredit,
+	)
+	var i AiProvider
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Slug,
+		&i.ApiKeySecure,
+		&i.BaseUrl,
+		&i.DefaultModel,
+		&i.TextModel,
+		&i.VisionModel,
+		&i.AudioModel,
+		&i.EmbeddingModel,
+		&i.EmbeddingDimensions,
+		&i.IsActive,
+		&i.Priority,
+		&i.IsDefault,
+		&i.LimitPerMinute,
+		&i.LimitPerDay,
+		&i.CostPerCredit,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)

@@ -81,3 +81,43 @@ SET credits_cost = $2,
     updated_at = NOW()
 WHERE id = $1
 RETURNING id, action_key, name, description, credits_cost, is_active, metadata, created_at, updated_at;
+
+-- name: ListAiProviders :many
+SELECT id, name, slug, api_key_secure, base_url, default_model, text_model, vision_model, audio_model, embedding_model, embedding_dimensions, is_active, priority, is_default, limit_per_minute, limit_per_day, cost_per_credit, created_at, updated_at
+FROM ai_providers
+ORDER BY priority DESC, name ASC;
+
+-- name: UpdateAiProvider :one
+UPDATE ai_providers
+SET name = COALESCE($2, name),
+    api_key_secure = COALESCE($3, api_key_secure),
+    base_url = COALESCE($4, base_url),
+    default_model = COALESCE($5, default_model),
+    text_model = COALESCE($6, text_model),
+    vision_model = COALESCE($7, vision_model),
+    audio_model = COALESCE($8, audio_model),
+    embedding_model = COALESCE($9, embedding_model),
+    embedding_dimensions = COALESCE($10, embedding_dimensions),
+    is_active = COALESCE($11, is_active),
+    priority = COALESCE($12, priority),
+    is_default = COALESCE($13, is_default),
+    limit_per_minute = COALESCE($14, limit_per_minute),
+    limit_per_day = COALESCE($15, limit_per_day),
+    cost_per_credit = COALESCE($16, cost_per_credit),
+    updated_at = NOW()
+WHERE id = $1
+RETURNING id, name, slug, api_key_secure, base_url, default_model, text_model, vision_model, audio_model, embedding_model, embedding_dimensions, is_active, priority, is_default, limit_per_minute, limit_per_day, cost_per_credit, created_at, updated_at;
+
+-- name: SetAllAiProvidersNotDefault :exec
+UPDATE ai_providers
+SET is_default = FALSE;
+
+-- name: SetAiProviderDefault :exec
+UPDATE ai_providers
+SET is_default = TRUE
+WHERE id = $1;
+
+-- name: GetAiProviderByID :one
+SELECT id, name, slug, api_key_secure, base_url, default_model, text_model, vision_model, audio_model, embedding_model, embedding_dimensions, is_active, priority, is_default, limit_per_minute, limit_per_day, cost_per_credit, created_at, updated_at
+FROM ai_providers
+WHERE id = $1 LIMIT 1;
