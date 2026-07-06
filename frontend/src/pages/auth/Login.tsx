@@ -19,18 +19,18 @@ export default function Login() {
 
     try {
       const response = await api.post('/auth/login', { email, password });
-      const { token, user } = response.data.data;
+      const { access_token, refresh_token, user } = response.data.data;
 
       // Fetch user profile to get organizations details
       const profileResponse = await api.get('/auth/me', {
         headers: {
-          Authorization: `Bearer ${token}`,
+          Authorization: `Bearer ${access_token}`,
         },
       });
 
       const { organizations } = profileResponse.data.data;
 
-      setAuth(token, user, organizations);
+      setAuth(access_token, refresh_token, user, organizations);
 
       // Redirect depending on global role
       if (user.global_role === 'SUPER_ADMIN') {

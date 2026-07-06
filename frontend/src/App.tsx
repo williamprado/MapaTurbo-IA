@@ -19,6 +19,9 @@ import AdminDashboard from './pages/admin/AdminDashboard';
 import ManageOrganizations from './pages/admin/ManageOrganizations';
 import ManagePlans from './pages/admin/ManagePlans';
 import ManageUsers from './pages/admin/ManageUsers';
+import ManageSettings from './pages/admin/ManageSettings';
+import ManageSubscriptions from './pages/admin/ManageSubscriptions';
+import ViewAuditLogs from './pages/admin/ViewAuditLogs';
 
 // Layouts
 import AppLayout from './layouts/AppLayout';
@@ -76,6 +79,9 @@ export default function App() {
           <Route path="organizations" element={<ManageOrganizations />} />
           <Route path="plans" element={<ManagePlans />} />
           <Route path="users" element={<ManageUsers />} />
+          <Route path="settings" element={<ManageSettings />} />
+          <Route path="subscriptions" element={<ManageSubscriptions />} />
+          <Route path="audit-logs" element={<ViewAuditLogs />} />
         </Route>
 
         {/* Fallback */}

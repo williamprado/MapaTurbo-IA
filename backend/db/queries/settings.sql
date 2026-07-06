@@ -68,3 +68,16 @@ RETURNING id, organization_id, balance, updated_at;
 INSERT INTO ai_credit_transactions (organization_id, amount, type, description, metadata)
 VALUES ($1, $2, $3, $4, $5)
 RETURNING id, organization_id, amount, type, description, metadata, created_at;
+
+-- name: ListAiActionPrices :many
+SELECT id, action_key, name, description, credits_cost, is_active, metadata, created_at, updated_at
+FROM ai_action_prices
+ORDER BY action_key ASC;
+
+-- name: UpdateAiActionPrice :one
+UPDATE ai_action_prices
+SET credits_cost = $2,
+    is_active = $3,
+    updated_at = NOW()
+WHERE id = $1
+RETURNING id, action_key, name, description, credits_cost, is_active, metadata, created_at, updated_at;

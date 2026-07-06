@@ -2,6 +2,9 @@ package auth
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -44,9 +47,32 @@ type LoginRequest struct {
 	Password string `json:"password" validate:"required"`
 }
 
+type RefreshRequest struct {
+	RefreshToken string `json:"refresh_token" validate:"required"`
+}
+
+type LogoutRequest struct {
+	RefreshToken string `json:"refresh_token" validate:"required"`
+}
+
 type AuthResponse struct {
-	Token string               `json:"token"`
-	User  database.CreateUserRow `json:"user"`
+	AccessToken  string                 `json:"access_token"`
+	RefreshToken string                 `json:"refresh_token"`
+	User         database.CreateUserRow `json:"user"`
+}
+
+func generateRandomToken() (string, error) {
+	bytes := make([]byte, 32)
+	if _, err := rand.Read(bytes); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(bytes), nil
+}
+
+func hashToken(token string) string {
+	h := sha256.New()
+	h.Write([]byte(token))
+	return hex.EncodeToString(h.Sum(nil))
 }
 
 func (h *Handler) Register(c *gin.Context) {
@@ -170,16 +196,37 @@ func (h *Handler) Register(c *gin.Context) {
 		return
 	}
 
-	// Generate Token
-	token, err := GenerateToken(uuidToString(user.ID), user.Email, user.GlobalRole, h.jwtSecret, 168*time.Hour)
+	// Generate tokens
+	accessToken, err := GenerateToken(uuidToString(user.ID), user.Email, user.GlobalRole, h.jwtSecret, 15*time.Minute)
 	if err != nil {
 		response.InternalServerError(c, "Account created, but token generation failed")
 		return
 	}
 
+	rawRefreshToken, err := generateRandomToken()
+	if err != nil {
+		response.InternalServerError(c, "Account created, but refresh token generation failed")
+		return
+	}
+
+	// Save hashed refresh token to database
+	hashedToken := hashToken(rawRefreshToken)
+	expiresAt := time.Now().Add(30 * 24 * time.Hour)
+
+	_, err = h.queries.CreateRefreshToken(c.Request.Context(), database.CreateRefreshTokenParams{
+		UserID:    user.ID,
+		TokenHash: hashedToken,
+		ExpiresAt: pgtype.Timestamptz{Time: expiresAt, Valid: true},
+	})
+	if err != nil {
+		response.InternalServerError(c, "Failed to initialize session parameters")
+		return
+	}
+
 	response.Success(c, http.StatusCreated, "User registered successfully", AuthResponse{
-		Token: token,
-		User:  user,
+		AccessToken:  accessToken,
+		RefreshToken: rawRefreshToken,
+		User:         user,
 	})
 }
 
@@ -234,10 +281,30 @@ func (h *Handler) Login(c *gin.Context) {
 		LastLoginAt: pgtype.Timestamptz{Time: now, Valid: true},
 	})
 
-	// Generate JWT Token
-	token, err := GenerateToken(uuidToString(user.ID), user.Email, user.GlobalRole, h.jwtSecret, 168*time.Hour)
+	// Generate tokens
+	accessToken, err := GenerateToken(uuidToString(user.ID), user.Email, user.GlobalRole, h.jwtSecret, 15*time.Minute)
 	if err != nil {
 		response.InternalServerError(c, "Token generation failed")
+		return
+	}
+
+	rawRefreshToken, err := generateRandomToken()
+	if err != nil {
+		response.InternalServerError(c, "Refresh token generation failed")
+		return
+	}
+
+	// Save hashed refresh token to database
+	hashedToken := hashToken(rawRefreshToken)
+	expiresAt := time.Now().Add(30 * 24 * time.Hour)
+
+	_, err = h.queries.CreateRefreshToken(c.Request.Context(), database.CreateRefreshTokenParams{
+		UserID:    user.ID,
+		TokenHash: hashedToken,
+		ExpiresAt: pgtype.Timestamptz{Time: expiresAt, Valid: true},
+	})
+	if err != nil {
+		response.InternalServerError(c, "Session persistence initialization failed")
 		return
 	}
 
@@ -265,8 +332,9 @@ func (h *Handler) Login(c *gin.Context) {
 	}
 
 	response.Success(c, http.StatusOK, "Login successful", AuthResponse{
-		Token: token,
-		User:  resUser,
+		AccessToken:  accessToken,
+		RefreshToken: rawRefreshToken,
+		User:         resUser,
 	})
 }
 
@@ -317,4 +385,141 @@ func ctxOrFallback(ctx context.Context) context.Context {
 		return context.Background()
 	}
 	return ctx
+}
+
+func (h *Handler) Refresh(c *gin.Context) {
+	var req RefreshRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid input data", err.Error())
+		return
+	}
+
+	if err := validator.Validate.Struct(req); err != nil {
+		response.BadRequest(c, "Validation failed", validator.FormatValidationError(err))
+		return
+	}
+
+	hashedToken := hashToken(req.RefreshToken)
+	dbToken, err := h.queries.GetRefreshToken(c.Request.Context(), hashedToken)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			response.Unauthorized(c, "Invalid or expired refresh token")
+			return
+		}
+		response.InternalServerError(c, "Database query failed")
+		return
+	}
+
+	user, err := h.queries.GetUserByID(c.Request.Context(), dbToken.UserID)
+	if err != nil {
+		response.Unauthorized(c, "Associated user account not found")
+		return
+	}
+
+	if user.Status == "BLOCKED" {
+		response.Forbidden(c, "Your account has been blocked")
+		return
+	}
+
+	// Token rotation: revoke old token
+	_ = h.queries.RevokeRefreshToken(c.Request.Context(), hashedToken)
+
+	// Generate new tokens
+	accessToken, err := GenerateToken(uuidToString(user.ID), user.Email, user.GlobalRole, h.jwtSecret, 15*time.Minute)
+	if err != nil {
+		response.InternalServerError(c, "Failed to generate access token")
+		return
+	}
+
+	rawRefreshToken, err := generateRandomToken()
+	if err != nil {
+		response.InternalServerError(c, "Failed to generate refresh token")
+		return
+	}
+
+	// Save new refresh token hash to database
+	newHashedToken := hashToken(rawRefreshToken)
+	expiresAt := time.Now().Add(30 * 24 * time.Hour)
+
+	_, err = h.queries.CreateRefreshToken(c.Request.Context(), database.CreateRefreshTokenParams{
+		UserID:    user.ID,
+		TokenHash: newHashedToken,
+		ExpiresAt: pgtype.Timestamptz{Time: expiresAt, Valid: true},
+	})
+	if err != nil {
+		response.InternalServerError(c, "Session persistence registration failed")
+		return
+	}
+
+	// Create Audit Log
+	meta, _ := json.Marshal(map[string]string{"email": user.Email})
+	_, _ = h.queries.CreateAuditLog(c.Request.Context(), database.CreateAuditLogParams{
+		ActorUserID: user.ID,
+		Action:      "REFRESH_TOKEN_CREATED",
+		EntityType:  "users",
+		EntityID:    user.ID,
+		Metadata:    meta,
+		Ip:          pgtype.Text{String: c.ClientIP(), Valid: true},
+		UserAgent:   pgtype.Text{String: c.GetHeader("User-Agent"), Valid: true},
+	})
+
+	// Format user for response
+	resUser := database.CreateUserRow{
+		ID:         user.ID,
+		Email:      user.Email,
+		Name:       user.Name,
+		GlobalRole: user.GlobalRole,
+		Status:     user.Status,
+		CreatedAt:  user.CreatedAt,
+		UpdatedAt:  user.UpdatedAt,
+	}
+
+	response.Success(c, http.StatusOK, "Token refreshed successfully", AuthResponse{
+		AccessToken:  accessToken,
+		RefreshToken: rawRefreshToken,
+		User:         resUser,
+	})
+}
+
+func (h *Handler) Logout(c *gin.Context) {
+	var req LogoutRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid input data", err.Error())
+		return
+	}
+
+	if err := validator.Validate.Struct(req); err != nil {
+		response.BadRequest(c, "Validation failed", validator.FormatValidationError(err))
+		return
+	}
+
+	hashedToken := hashToken(req.RefreshToken)
+	
+	// Try to get token first to check user ID for audit log
+	dbToken, err := h.queries.GetRefreshToken(c.Request.Context(), hashedToken)
+	var actorUserID pgtype.UUID
+	if err == nil {
+		actorUserID = dbToken.UserID
+	}
+
+	// Revoke token in database
+	err = h.queries.RevokeRefreshToken(c.Request.Context(), hashedToken)
+	if err != nil {
+		response.InternalServerError(c, "Failed to revoke token")
+		return
+	}
+
+	// Create Audit Log
+	if actorUserID.Valid {
+		_, _ = h.queries.CreateAuditLog(c.Request.Context(), database.CreateAuditLogParams{
+			ActorUserID: actorUserID,
+			Action:      "LOGOUT",
+			EntityType:  "users",
+			EntityID:    actorUserID,
+			Ip:          pgtype.Text{String: c.ClientIP(), Valid: true},
+			UserAgent:   pgtype.Text{String: c.GetHeader("User-Agent"), Valid: true},
+		})
+	}
+
+	response.Success(c, http.StatusOK, "Logged out successfully", nil)
 }

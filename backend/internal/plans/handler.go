@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -273,6 +274,179 @@ func (h *Handler) Update(c *gin.Context) {
 	response.Success(c, http.StatusOK, "Plan updated successfully", plan)
 }
 
+type ManualSubscriptionRequest struct {
+	OrganizationID string `json:"organization_id" validate:"required"`
+	PlanID         string `json:"plan_id" validate:"required"`
+	DurationDays   int    `json:"duration_days" validate:"required,min=1"`
+}
+
+func (h *Handler) ListSubscriptions(c *gin.Context) {
+	limitStr := c.DefaultQuery("limit", "10")
+	offsetStr := c.DefaultQuery("offset", "0")
+
+	limit, err := strconv.Atoi(limitStr)
+	if err != nil {
+		limit = 10
+	}
+	offset, err := strconv.Atoi(offsetStr)
+	if err != nil {
+		offset = 0
+	}
+
+	subs, err := h.queries.ListSubscriptions(c.Request.Context(), database.ListSubscriptionsParams{
+		Limit:  int32(limit),
+		Offset: int32(offset),
+	})
+	if err != nil {
+		response.InternalServerError(c, "Failed to retrieve subscriptions")
+		return
+	}
+
+	count, err := h.queries.CountSubscriptions(c.Request.Context())
+	if err != nil {
+		count = 0
+	}
+
+	response.Success(c, http.StatusOK, "Subscriptions list", gin.H{
+		"subscriptions": subs,
+		"total":         count,
+	})
+}
+
+func (h *Handler) CreateManual(c *gin.Context) {
+	var req ManualSubscriptionRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid input", err.Error())
+		return
+	}
+
+	if err := validator.Validate.Struct(req); err != nil {
+		response.BadRequest(c, "Validation failed", validator.FormatValidationError(err))
+		return
+	}
+
+	var orgID, planID pgtype.UUID
+	if err := orgID.Scan(req.OrganizationID); err != nil {
+		response.BadRequest(c, "Invalid organization UUID format", nil)
+		return
+	}
+	if err := planID.Scan(req.PlanID); err != nil {
+		response.BadRequest(c, "Invalid plan UUID format", nil)
+		return
+	}
+
+	// Verify plan exists
+	plan, err := h.queries.GetPlanByID(c.Request.Context(), planID)
+	if err != nil {
+		response.NotFound(c, "Plan not found")
+		return
+	}
+
+	// Transaction block
+	tx, err := h.db.Begin(c.Request.Context())
+	if err != nil {
+		response.InternalServerError(c, "Failed to start transaction")
+		return
+	}
+	defer tx.Rollback(c.Request.Context())
+
+	txQueries := h.queries.WithTx(tx)
+
+	// Check if organization has subscription already
+	existingSub, err := txQueries.GetSubscriptionByOrg(c.Request.Context(), orgID)
+	var sub database.Subscription
+
+	if err == nil {
+		// Update existing
+		sub, err = txQueries.UpdateSubscription(c.Request.Context(), database.UpdateSubscriptionParams{
+			ID:                     existingSub.ID,
+			PlanID:                 planID,
+			Status:                 "ACTIVE",
+			PaymentProvider:        "MANUAL",
+			ExternalSubscriptionID: pgtype.Text{String: "MANUAL-" + req.OrganizationID, Valid: true},
+			CurrentPeriodStart:     pgtype.Timestamptz{Time: time.Now(), Valid: true},
+			CurrentPeriodEnd:       pgtype.Timestamptz{Time: time.Now().AddDate(0, 0, req.DurationDays), Valid: true},
+		})
+	} else {
+		// Create new
+		sub, err = txQueries.CreateSubscription(c.Request.Context(), database.CreateSubscriptionParams{
+			OrganizationID:         orgID,
+			PlanID:                 planID,
+			Status:                 "ACTIVE",
+			PaymentProvider:        "MANUAL",
+			ExternalSubscriptionID: pgtype.Text{String: "MANUAL-" + req.OrganizationID, Valid: true},
+			CurrentPeriodStart:     pgtype.Timestamptz{Time: time.Now(), Valid: true},
+			CurrentPeriodEnd:       pgtype.Timestamptz{Time: time.Now().AddDate(0, 0, req.DurationDays), Valid: true},
+		})
+	}
+
+	if err != nil {
+		response.InternalServerError(c, "Failed to create/update subscription")
+		return
+	}
+
+	// Initialize or Add Credits
+	_, _ = txQueries.InitializeCreditBalance(c.Request.Context(), database.InitializeCreditBalanceParams{
+		OrganizationID: orgID,
+		Balance:        0, // start with 0, then update
+	})
+
+	_, err = txQueries.UpdateCreditBalance(c.Request.Context(), database.UpdateCreditBalanceParams{
+		OrganizationID: orgID,
+		Balance:        plan.CreditsMonthly,
+	})
+	if err != nil {
+		response.InternalServerError(c, "Failed to credit organization balance")
+		return
+	}
+
+	// Create Credit Transaction
+	txMeta, _ := json.Marshal(map[string]interface{}{
+		"subscription_id": sub.ID,
+		"plan_name":       plan.Name,
+	})
+	_, err = txQueries.CreateCreditTransaction(c.Request.Context(), database.CreateCreditTransactionParams{
+		OrganizationID: orgID,
+		Amount:         plan.CreditsMonthly,
+		Type:           "ADD",
+		Description:    "Créditos mensais do plano (Ativação Manual)",
+		Metadata:       txMeta,
+	})
+	if err != nil {
+		response.InternalServerError(c, "Failed to record credit transaction")
+		return
+	}
+
+	// Commit Transaction
+	if err := tx.Commit(c.Request.Context()); err != nil {
+		response.InternalServerError(c, "Failed to finalize subscription")
+		return
+	}
+
+	// Create Audit Log (using root queries)
+	actorUserIDStr, _ := c.Get("user_id")
+	var actorUserID pgtype.UUID
+	_ = actorUserID.Scan(actorUserIDStr)
+
+	meta, _ := json.Marshal(map[string]string{
+		"subscription_id": uuidToString(sub.ID),
+		"organization_id": req.OrganizationID,
+		"plan_name":       plan.Name,
+	})
+	_, _ = h.queries.CreateAuditLog(c.Request.Context(), database.CreateAuditLogParams{
+		ActorUserID:    actorUserID,
+		OrganizationID: orgID,
+		Action:         "SUBSCRIPTION_MANUAL_CREATED",
+		EntityType:     "subscriptions",
+		EntityID:       sub.ID,
+		Metadata:       meta,
+		Ip:             pgtype.Text{String: c.ClientIP(), Valid: true},
+		UserAgent:      pgtype.Text{String: c.GetHeader("User-Agent"), Valid: true},
+	})
+
+	response.Success(c, http.StatusCreated, "Manual subscription created successfully", sub)
+}
+
 // Helpers
 func floatToNumeric(f float64) pgtype.Numeric {
 	var num pgtype.Numeric
@@ -285,4 +459,13 @@ func jsonMarshal(v interface{}) ([]byte, error) {
 		return []byte("{}"), nil
 	}
 	return json.Marshal(v)
+}
+
+func uuidToString(u pgtype.UUID) string {
+	if !u.Valid {
+		return ""
+	}
+	var str string
+	u.Scan(&str)
+	return str
 }

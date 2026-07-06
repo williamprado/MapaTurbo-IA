@@ -327,6 +327,42 @@ func (q *Queries) InitializeCreditBalance(ctx context.Context, arg InitializeCre
 	return i, err
 }
 
+const listAiActionPrices = `-- name: ListAiActionPrices :many
+SELECT id, action_key, name, description, credits_cost, is_active, metadata, created_at, updated_at
+FROM ai_action_prices
+ORDER BY action_key ASC
+`
+
+func (q *Queries) ListAiActionPrices(ctx context.Context) ([]AiActionPrice, error) {
+	rows, err := q.db.Query(ctx, listAiActionPrices)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []AiActionPrice
+	for rows.Next() {
+		var i AiActionPrice
+		if err := rows.Scan(
+			&i.ID,
+			&i.ActionKey,
+			&i.Name,
+			&i.Description,
+			&i.CreditsCost,
+			&i.IsActive,
+			&i.Metadata,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listSystemSettings = `-- name: ListSystemSettings :many
 SELECT key, value, description, is_public, updated_at
 FROM system_settings
@@ -357,6 +393,38 @@ func (q *Queries) ListSystemSettings(ctx context.Context) ([]SystemSetting, erro
 		return nil, err
 	}
 	return items, nil
+}
+
+const updateAiActionPrice = `-- name: UpdateAiActionPrice :one
+UPDATE ai_action_prices
+SET credits_cost = $2,
+    is_active = $3,
+    updated_at = NOW()
+WHERE id = $1
+RETURNING id, action_key, name, description, credits_cost, is_active, metadata, created_at, updated_at
+`
+
+type UpdateAiActionPriceParams struct {
+	ID          pgtype.UUID
+	CreditsCost int32
+	IsActive    bool
+}
+
+func (q *Queries) UpdateAiActionPrice(ctx context.Context, arg UpdateAiActionPriceParams) (AiActionPrice, error) {
+	row := q.db.QueryRow(ctx, updateAiActionPrice, arg.ID, arg.CreditsCost, arg.IsActive)
+	var i AiActionPrice
+	err := row.Scan(
+		&i.ID,
+		&i.ActionKey,
+		&i.Name,
+		&i.Description,
+		&i.CreditsCost,
+		&i.IsActive,
+		&i.Metadata,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }
 
 const updateCreditBalance = `-- name: UpdateCreditBalance :one

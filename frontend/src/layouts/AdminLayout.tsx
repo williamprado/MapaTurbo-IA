@@ -11,6 +11,9 @@ export default function AdminLayout() {
     { label: 'Empresas', path: '/admin/organizations', icon: '🏢' },
     { label: 'Planos', path: '/admin/plans', icon: '📋' },
     { label: 'Usuários', path: '/admin/users', icon: '👥' },
+    { label: 'Configurações', path: '/admin/settings', icon: '⚙️' },
+    { label: 'Assinaturas', path: '/admin/subscriptions', icon: '💳' },
+    { label: 'Auditoria', path: '/admin/audit-logs', icon: '📜' },
   ];
 
   return (

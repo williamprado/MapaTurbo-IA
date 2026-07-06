@@ -23,6 +23,17 @@ func (q *Queries) CountPlans(ctx context.Context) (int64, error) {
 	return count, err
 }
 
+const countSubscriptions = `-- name: CountSubscriptions :one
+SELECT COUNT(*) FROM subscriptions
+`
+
+func (q *Queries) CountSubscriptions(ctx context.Context) (int64, error) {
+	row := q.db.QueryRow(ctx, countSubscriptions)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createPlan = `-- name: CreatePlan :one
 INSERT INTO plans (
     name, description, price_monthly, price_yearly, currency,
@@ -303,6 +314,67 @@ func (q *Queries) ListPublicPlans(ctx context.Context) ([]ListPublicPlansRow, er
 			&i.IsPublic,
 			&i.IsActive,
 			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listSubscriptions = `-- name: ListSubscriptions :many
+SELECT s.id, s.organization_id, s.plan_id, s.status, s.payment_provider, s.external_subscription_id, s.current_period_start, s.current_period_end, s.created_at,
+       o.name as organization_name, p.name as plan_name
+FROM subscriptions s
+JOIN organizations o ON s.organization_id = o.id
+JOIN plans p ON s.plan_id = p.id
+ORDER BY s.created_at DESC
+LIMIT $1 OFFSET $2
+`
+
+type ListSubscriptionsParams struct {
+	Limit  int32
+	Offset int32
+}
+
+type ListSubscriptionsRow struct {
+	ID                     pgtype.UUID
+	OrganizationID         pgtype.UUID
+	PlanID                 pgtype.UUID
+	Status                 string
+	PaymentProvider        string
+	ExternalSubscriptionID pgtype.Text
+	CurrentPeriodStart     pgtype.Timestamptz
+	CurrentPeriodEnd       pgtype.Timestamptz
+	CreatedAt              pgtype.Timestamptz
+	OrganizationName       string
+	PlanName               string
+}
+
+func (q *Queries) ListSubscriptions(ctx context.Context, arg ListSubscriptionsParams) ([]ListSubscriptionsRow, error) {
+	rows, err := q.db.Query(ctx, listSubscriptions, arg.Limit, arg.Offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListSubscriptionsRow
+	for rows.Next() {
+		var i ListSubscriptionsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.OrganizationID,
+			&i.PlanID,
+			&i.Status,
+			&i.PaymentProvider,
+			&i.ExternalSubscriptionID,
+			&i.CurrentPeriodStart,
+			&i.CurrentPeriodEnd,
+			&i.CreatedAt,
+			&i.OrganizationName,
+			&i.PlanName,
 		); err != nil {
 			return nil, err
 		}

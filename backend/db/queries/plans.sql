@@ -72,3 +72,15 @@ SET plan_id = COALESCE($2, plan_id),
     trial_end = COALESCE($9, trial_end)
 WHERE id = $1
 RETURNING id, organization_id, plan_id, status, payment_provider, external_subscription_id, current_period_start, current_period_end, trial_start, trial_end, created_at, updated_at;
+
+-- name: ListSubscriptions :many
+SELECT s.id, s.organization_id, s.plan_id, s.status, s.payment_provider, s.external_subscription_id, s.current_period_start, s.current_period_end, s.created_at,
+       o.name as organization_name, p.name as plan_name
+FROM subscriptions s
+JOIN organizations o ON s.organization_id = o.id
+JOIN plans p ON s.plan_id = p.id
+ORDER BY s.created_at DESC
+LIMIT $1 OFFSET $2;
+
+-- name: CountSubscriptions :one
+SELECT COUNT(*) FROM subscriptions;

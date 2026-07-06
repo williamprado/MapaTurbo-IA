@@ -1,6 +1,7 @@
 package organizations
 
 import (
+	"encoding/json"
 	"net/http"
 	"strconv"
 	"strings"
@@ -198,4 +199,245 @@ func (h *Handler) Update(c *gin.Context) {
 	})
 
 	response.Success(c, http.StatusOK, "Organization updated successfully", org)
+}
+
+type AddUserRequest struct {
+	UserID string `json:"user_id" validate:"required"`
+	Role   string `json:"role" validate:"required,oneof=ORG_ADMIN USER"`
+}
+
+type UpdateUserRoleRequest struct {
+	Role string `json:"role" validate:"required,oneof=ORG_ADMIN USER"`
+}
+
+func (h *Handler) ListUsers(c *gin.Context) {
+	idStr := c.Param("id")
+	var id pgtype.UUID
+	if err := id.Scan(idStr); err != nil {
+		response.BadRequest(c, "Invalid UUID format", nil)
+		return
+	}
+
+	users, err := h.queries.ListOrganizationUsers(c.Request.Context(), id)
+	if err != nil {
+		response.InternalServerError(c, "Failed to retrieve organization users")
+		return
+	}
+
+	response.Success(c, http.StatusOK, "Organization users list", users)
+}
+
+func (h *Handler) AddUser(c *gin.Context) {
+	idStr := c.Param("id")
+	var id pgtype.UUID
+	if err := id.Scan(idStr); err != nil {
+		response.BadRequest(c, "Invalid UUID format", nil)
+		return
+	}
+
+	var req AddUserRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid input", err.Error())
+		return
+	}
+
+	if err := validator.Validate.Struct(req); err != nil {
+		response.BadRequest(c, "Validation failed", validator.FormatValidationError(err))
+		return
+	}
+
+	var targetUserID pgtype.UUID
+	if err := targetUserID.Scan(req.UserID); err != nil {
+		response.BadRequest(c, "Invalid target User UUID format", nil)
+		return
+	}
+
+	// Check if already member
+	_, err := h.queries.GetOrganizationUser(c.Request.Context(), database.GetOrganizationUserParams{
+		OrganizationID: id,
+		UserID:         targetUserID,
+	})
+	if err == nil {
+		response.BadRequest(c, "User is already a member of this organization", nil)
+		return
+	}
+
+	orgUser, err := h.queries.CreateOrganizationUser(c.Request.Context(), database.CreateOrganizationUserParams{
+		OrganizationID: id,
+		UserID:         targetUserID,
+		Role:           req.Role,
+	})
+	if err != nil {
+		response.InternalServerError(c, "Failed to add user to organization")
+		return
+	}
+
+	// Create Audit Log
+	actorUserIDStr, _ := c.Get("user_id")
+	var actorUserID pgtype.UUID
+	_ = actorUserID.Scan(actorUserIDStr)
+
+	meta, _ := json.Marshal(map[string]string{
+		"role":    req.Role,
+		"user_id": req.UserID,
+	})
+	_, _ = h.queries.CreateAuditLog(c.Request.Context(), database.CreateAuditLogParams{
+		ActorUserID:    actorUserID,
+		OrganizationID: id,
+		Action:         "ORGANIZATION_USER_ADDED",
+		EntityType:     "organization_users",
+		EntityID:       orgUser.ID,
+		Metadata:       meta,
+		Ip:             pgtype.Text{String: c.ClientIP(), Valid: true},
+		UserAgent:      pgtype.Text{String: c.GetHeader("User-Agent"), Valid: true},
+	})
+
+	response.Success(c, http.StatusCreated, "User added to organization successfully", orgUser)
+}
+
+func (h *Handler) RemoveUser(c *gin.Context) {
+	idStr := c.Param("id")
+	var id pgtype.UUID
+	if err := id.Scan(idStr); err != nil {
+		response.BadRequest(c, "Invalid UUID format", nil)
+		return
+	}
+
+	targetUserIDStr := c.Param("userId")
+	var targetUserID pgtype.UUID
+	if err := targetUserID.Scan(targetUserIDStr); err != nil {
+		response.BadRequest(c, "Invalid target User UUID format", nil)
+		return
+	}
+
+	// Verify membership
+	orgUser, err := h.queries.GetOrganizationUser(c.Request.Context(), database.GetOrganizationUserParams{
+		OrganizationID: id,
+		UserID:         targetUserID,
+	})
+	if err != nil {
+		response.NotFound(c, "User is not a member of this organization")
+		return
+	}
+
+	err = h.queries.RemoveOrganizationUser(c.Request.Context(), database.RemoveOrganizationUserParams{
+		OrganizationID: id,
+		UserID:         targetUserID,
+	})
+	if err != nil {
+		response.InternalServerError(c, "Failed to remove user from organization")
+		return
+	}
+
+	// Create Audit Log
+	actorUserIDStr, _ := c.Get("user_id")
+	var actorUserID pgtype.UUID
+	_ = actorUserID.Scan(actorUserIDStr)
+
+	meta, _ := json.Marshal(map[string]string{
+		"user_id": targetUserIDStr,
+	})
+	_, _ = h.queries.CreateAuditLog(c.Request.Context(), database.CreateAuditLogParams{
+		ActorUserID:    actorUserID,
+		OrganizationID: id,
+		Action:         "ORGANIZATION_USER_REMOVED",
+		EntityType:     "organization_users",
+		EntityID:       orgUser.ID,
+		Metadata:       meta,
+		Ip:             pgtype.Text{String: c.ClientIP(), Valid: true},
+		UserAgent:      pgtype.Text{String: c.GetHeader("User-Agent"), Valid: true},
+	})
+
+	response.Success(c, http.StatusOK, "User removed from organization successfully", nil)
+}
+
+func (h *Handler) UpdateUserRole(c *gin.Context) {
+	idStr := c.Param("id")
+	var id pgtype.UUID
+	if err := id.Scan(idStr); err != nil {
+		response.BadRequest(c, "Invalid UUID format", nil)
+		return
+	}
+
+	targetUserIDStr := c.Param("userId")
+	var targetUserID pgtype.UUID
+	if err := targetUserID.Scan(targetUserIDStr); err != nil {
+		response.BadRequest(c, "Invalid target User UUID format", nil)
+		return
+	}
+
+	var req UpdateUserRoleRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid input", err.Error())
+		return
+	}
+
+	if err := validator.Validate.Struct(req); err != nil {
+		response.BadRequest(c, "Validation failed", validator.FormatValidationError(err))
+		return
+	}
+
+	// Verify membership
+	_, err := h.queries.GetOrganizationUser(c.Request.Context(), database.GetOrganizationUserParams{
+		OrganizationID: id,
+		UserID:         targetUserID,
+	})
+	if err != nil {
+		response.NotFound(c, "User is not a member of this organization")
+		return
+	}
+
+	orgUser, err := h.queries.UpdateOrganizationUserRole(c.Request.Context(), database.UpdateOrganizationUserRoleParams{
+		OrganizationID: id,
+		UserID:         targetUserID,
+		Role:           req.Role,
+	})
+	if err != nil {
+		response.InternalServerError(c, "Failed to update user role")
+		return
+	}
+
+	// Create Audit Log
+	actorUserIDStr, _ := c.Get("user_id")
+	var actorUserID pgtype.UUID
+	_ = actorUserID.Scan(actorUserIDStr)
+
+	meta, _ := json.Marshal(map[string]string{
+		"new_role": req.Role,
+		"user_id":  targetUserIDStr,
+	})
+	_, _ = h.queries.CreateAuditLog(c.Request.Context(), database.CreateAuditLogParams{
+		ActorUserID:    actorUserID,
+		OrganizationID: id,
+		Action:         "ORGANIZATION_USER_ROLE_UPDATED",
+		EntityType:     "organization_users",
+		EntityID:       orgUser.ID,
+		Metadata:       meta,
+		Ip:             pgtype.Text{String: c.ClientIP(), Valid: true},
+		UserAgent:      pgtype.Text{String: c.GetHeader("User-Agent"), Valid: true},
+	})
+
+	response.Success(c, http.StatusOK, "User role updated successfully", orgUser)
+}
+
+func (h *Handler) GetBalance(c *gin.Context) {
+	orgIDVal, exists := c.Get("org_id")
+	if !exists {
+		response.BadRequest(c, "Organization context required", nil)
+		return
+	}
+	orgID := orgIDVal.(pgtype.UUID)
+
+	balance, err := h.queries.GetCreditBalance(c.Request.Context(), orgID)
+	if err != nil {
+		response.Success(c, http.StatusOK, "Balance details", gin.H{
+			"balance": 0,
+		})
+		return
+	}
+
+	response.Success(c, http.StatusOK, "Balance details", gin.H{
+		"balance":    balance.Balance,
+		"updated_at": balance.UpdatedAt,
+	})
 }

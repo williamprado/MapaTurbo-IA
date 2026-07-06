@@ -110,3 +110,66 @@ func (q *Queries) ListAuditLogs(ctx context.Context, arg ListAuditLogsParams) ([
 	}
 	return items, nil
 }
+
+const listAuditLogsDetailed = `-- name: ListAuditLogsDetailed :many
+SELECT al.id, al.actor_user_id, al.organization_id, al.action, al.entity_type, al.entity_id, al.metadata, al.ip, al.user_agent, al.created_at,
+       u.email as actor_email, o.name as organization_name
+FROM audit_logs al
+LEFT JOIN users u ON al.actor_user_id = u.id
+LEFT JOIN organizations o ON al.organization_id = o.id
+ORDER BY al.created_at DESC
+LIMIT $1 OFFSET $2
+`
+
+type ListAuditLogsDetailedParams struct {
+	Limit  int32
+	Offset int32
+}
+
+type ListAuditLogsDetailedRow struct {
+	ID               pgtype.UUID
+	ActorUserID      pgtype.UUID
+	OrganizationID   pgtype.UUID
+	Action           string
+	EntityType       string
+	EntityID         pgtype.UUID
+	Metadata         []byte
+	Ip               pgtype.Text
+	UserAgent        pgtype.Text
+	CreatedAt        pgtype.Timestamptz
+	ActorEmail       pgtype.Text
+	OrganizationName pgtype.Text
+}
+
+func (q *Queries) ListAuditLogsDetailed(ctx context.Context, arg ListAuditLogsDetailedParams) ([]ListAuditLogsDetailedRow, error) {
+	rows, err := q.db.Query(ctx, listAuditLogsDetailed, arg.Limit, arg.Offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListAuditLogsDetailedRow
+	for rows.Next() {
+		var i ListAuditLogsDetailedRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.ActorUserID,
+			&i.OrganizationID,
+			&i.Action,
+			&i.EntityType,
+			&i.EntityID,
+			&i.Metadata,
+			&i.Ip,
+			&i.UserAgent,
+			&i.CreatedAt,
+			&i.ActorEmail,
+			&i.OrganizationName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}

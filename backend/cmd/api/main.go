@@ -19,6 +19,9 @@ import (
 	"mapaturbo-ia/internal/organizations"
 	"mapaturbo-ia/internal/plans"
 	"mapaturbo-ia/internal/users"
+	"mapaturbo-ia/internal/settings"
+	"mapaturbo-ia/internal/audit"
+	"mapaturbo-ia/internal/uploads"
 	"mapaturbo-ia/pkg/config"
 	dbpkg "mapaturbo-ia/pkg/database"
 	"mapaturbo-ia/pkg/logger"
@@ -107,6 +110,9 @@ func main() {
 	orgHandler := organizations.NewHandler(pool)
 	planHandler := plans.NewHandler(pool)
 	userHandler := users.NewHandler(pool)
+	settingsHandler := settings.NewHandler(pool)
+	auditHandler := audit.NewHandler(pool)
+	uploadHandler := uploads.NewHandler(pool, storage.Client)
 
 	r.GET("/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
@@ -118,11 +124,22 @@ func main() {
 
 	r.POST("/auth/register", authHandler.Register)
 	r.POST("/auth/login", authHandler.Login)
+	r.POST("/auth/refresh", authHandler.Refresh)
 
 	authGroup := r.Group("")
 	authGroup.Use(middleware.AuthMiddleware(cfg.JWTSecret))
 	{
 		authGroup.GET("/auth/me", authHandler.Me)
+		authGroup.POST("/auth/logout", authHandler.Logout)
+
+		tenantGroup := authGroup.Group("")
+		tenantGroup.Use(middleware.TenantMiddleware(pool))
+		{
+			tenantGroup.POST("/uploads", uploadHandler.Upload)
+			tenantGroup.GET("/uploads", uploadHandler.List)
+			tenantGroup.GET("/uploads/:id", uploadHandler.GetByID)
+			tenantGroup.GET("/credits/balance", orgHandler.GetBalance)
+		}
 
 		adminGroup := authGroup.Group("/admin")
 		adminGroup.Use(middleware.RequireSuperAdmin())
@@ -131,6 +148,10 @@ func main() {
 			adminGroup.POST("/organizations", orgHandler.Create)
 			adminGroup.GET("/organizations/:id", orgHandler.GetByID)
 			adminGroup.PATCH("/organizations/:id", orgHandler.Update)
+			adminGroup.GET("/organizations/:id/users", orgHandler.ListUsers)
+			adminGroup.POST("/organizations/:id/users", orgHandler.AddUser)
+			adminGroup.DELETE("/organizations/:id/users/:userId", orgHandler.RemoveUser)
+			adminGroup.PATCH("/organizations/:id/users/:userId/role", orgHandler.UpdateUserRole)
 
 			adminGroup.GET("/plans", planHandler.List)
 			adminGroup.POST("/plans", planHandler.Create)
@@ -140,6 +161,21 @@ func main() {
 			adminGroup.GET("/users", userHandler.List)
 			adminGroup.GET("/users/:id", userHandler.GetByID)
 			adminGroup.PATCH("/users/:id", userHandler.Update)
+
+			// Settings routes
+			adminGroup.GET("/settings", settingsHandler.List)
+			adminGroup.PATCH("/settings/:key", settingsHandler.Update)
+
+			// AI Action Prices routes
+			adminGroup.GET("/ai-action-prices", settingsHandler.ListAiActionPrices)
+			adminGroup.PATCH("/ai-action-prices/:id", settingsHandler.UpdateAiActionPrice)
+
+			// Subscriptions manual admin routes
+			adminGroup.GET("/subscriptions", planHandler.ListSubscriptions)
+			adminGroup.POST("/subscriptions/manual", planHandler.CreateManual)
+
+			// Audit Logs admin routes
+			adminGroup.GET("/audit-logs", auditHandler.List)
 		}
 	}
 

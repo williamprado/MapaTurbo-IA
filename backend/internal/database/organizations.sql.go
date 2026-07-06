@@ -180,6 +180,52 @@ func (q *Queries) GetUserOrganizations(ctx context.Context, userID pgtype.UUID) 
 	return items, nil
 }
 
+const listOrganizationUsers = `-- name: ListOrganizationUsers :many
+SELECT ou.id, ou.organization_id, ou.user_id, ou.role, ou.created_at,
+       u.email, u.name as user_name
+FROM organization_users ou
+JOIN users u ON ou.user_id = u.id
+WHERE ou.organization_id = $1
+`
+
+type ListOrganizationUsersRow struct {
+	ID             pgtype.UUID
+	OrganizationID pgtype.UUID
+	UserID         pgtype.UUID
+	Role           string
+	CreatedAt      pgtype.Timestamptz
+	Email          string
+	UserName       string
+}
+
+func (q *Queries) ListOrganizationUsers(ctx context.Context, organizationID pgtype.UUID) ([]ListOrganizationUsersRow, error) {
+	rows, err := q.db.Query(ctx, listOrganizationUsers, organizationID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListOrganizationUsersRow
+	for rows.Next() {
+		var i ListOrganizationUsersRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.OrganizationID,
+			&i.UserID,
+			&i.Role,
+			&i.CreatedAt,
+			&i.Email,
+			&i.UserName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listOrganizations = `-- name: ListOrganizations :many
 SELECT id, name, slug, status, created_at
 FROM organizations

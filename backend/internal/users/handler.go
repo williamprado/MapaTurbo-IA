@@ -133,5 +133,38 @@ func (h *Handler) Update(c *gin.Context) {
 		return
 	}
 
+	// Create Audit Log
+	actorUserIDStr, _ := c.Get("user_id")
+	var actorUserID pgtype.UUID
+	_ = actorUserID.Scan(actorUserIDStr)
+
+	// Check if status changed
+	if req.Status != nil && *req.Status != existing.Status {
+		action := "USER_UNBLOCKED"
+		if *req.Status == "BLOCKED" {
+			action = "USER_BLOCKED"
+			// Revoke all refresh tokens
+			_ = h.queries.RevokeAllUserRefreshTokens(c.Request.Context(), id)
+		}
+		_, _ = h.queries.CreateAuditLog(c.Request.Context(), database.CreateAuditLogParams{
+			ActorUserID: actorUserID,
+			Action:      action,
+			EntityType:  "users",
+			EntityID:    id,
+			Ip:          pgtype.Text{String: c.ClientIP(), Valid: true},
+			UserAgent:   pgtype.Text{String: c.GetHeader("User-Agent"), Valid: true},
+		})
+	} else {
+		// Log standard profile update
+		_, _ = h.queries.CreateAuditLog(c.Request.Context(), database.CreateAuditLogParams{
+			ActorUserID: actorUserID,
+			Action:      "USER_UPDATED",
+			EntityType:  "users",
+			EntityID:    id,
+			Ip:          pgtype.Text{String: c.ClientIP(), Valid: true},
+			UserAgent:   pgtype.Text{String: c.GetHeader("User-Agent"), Valid: true},
+		})
+	}
+
 	response.Success(c, http.StatusOK, "User updated successfully", user)
 }

@@ -27,17 +27,17 @@ export default function Register() {
         org_name: orgName,
       });
 
-      const { token, user } = response.data.data;
+      const { access_token, refresh_token, user } = response.data.data;
 
       // Fetch profile to load complete organization context
       const profileResponse = await api.get('/auth/me', {
         headers: {
-          Authorization: `Bearer ${token}`,
+          Authorization: `Bearer ${access_token}`,
         },
       });
 
       const { organizations } = profileResponse.data.data;
-      setAuth(token, user, organizations);
+      setAuth(access_token, refresh_token, user, organizations);
 
       navigate('/app');
     } catch (err: any) {

@@ -55,3 +55,10 @@ RETURNING id, organization_id, user_id, role, created_at, updated_at;
 -- name: RemoveOrganizationUser :exec
 DELETE FROM organization_users
 WHERE organization_id = $1 AND user_id = $2;
+
+-- name: ListOrganizationUsers :many
+SELECT ou.id, ou.organization_id, ou.user_id, ou.role, ou.created_at,
+       u.email, u.name as user_name
+FROM organization_users ou
+JOIN users u ON ou.user_id = u.id
+WHERE ou.organization_id = $1;

@@ -18,22 +18,26 @@ interface Organization {
 
 interface AuthState {
   token: string | null;
+  refreshToken: string | null;
   user: User | null;
   organizations: Organization[];
   activeOrgId: string | null;
-  setAuth: (token: string, user: User, organizations: Organization[]) => void;
+  setAuth: (token: string, refreshToken: string, user: User, organizations: Organization[]) => void;
+  setTokens: (token: string, refreshToken: string) => void;
   setActiveOrgId: (orgId: string | null) => void;
   logout: () => void;
 }
 
 export const useAuthStore = create<AuthState>((set) => ({
   token: localStorage.getItem('token'),
+  refreshToken: localStorage.getItem('refreshToken'),
   user: localStorage.getItem('user') ? JSON.parse(localStorage.getItem('user')!) : null,
   organizations: localStorage.getItem('organizations') ? JSON.parse(localStorage.getItem('organizations')!) : [],
   activeOrgId: localStorage.getItem('activeOrgId'),
 
-  setAuth: (token, user, organizations) => {
+  setAuth: (token, refreshToken, user, organizations) => {
     localStorage.setItem('token', token);
+    localStorage.setItem('refreshToken', refreshToken);
     localStorage.setItem('user', JSON.stringify(user));
     localStorage.setItem('organizations', JSON.stringify(organizations));
     
@@ -44,7 +48,13 @@ export const useAuthStore = create<AuthState>((set) => ({
       localStorage.removeItem('activeOrgId');
     }
 
-    set({ token, user, organizations, activeOrgId });
+    set({ token, refreshToken, user, organizations, activeOrgId });
+  },
+
+  setTokens: (token, refreshToken) => {
+    localStorage.setItem('token', token);
+    localStorage.setItem('refreshToken', refreshToken);
+    set({ token, refreshToken });
   },
 
   setActiveOrgId: (activeOrgId) => {
@@ -58,9 +68,10 @@ export const useAuthStore = create<AuthState>((set) => ({
 
   logout: () => {
     localStorage.removeItem('token');
+    localStorage.removeItem('refreshToken');
     localStorage.removeItem('user');
     localStorage.removeItem('organizations');
     localStorage.removeItem('activeOrgId');
-    set({ token: null, user: null, organizations: [], activeOrgId: null });
+    set({ token: null, refreshToken: null, user: null, organizations: [], activeOrgId: null });
   },
 }));
