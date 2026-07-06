@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useNavigate, Link } from 'react-router-dom';
 import { api } from '../../services/api';
 import { useAuthStore } from '../../stores/auth';
 
@@ -20,6 +21,7 @@ interface UploadFile {
 }
 
 export default function Dashboard() {
+  const navigate = useNavigate();
   const { activeOrgId } = useAuthStore();
   const [maps, setMaps] = useState<MindMap[]>([]);
   const [uploads, setUploads] = useState<UploadFile[]>([]);
@@ -41,13 +43,14 @@ export default function Dashboard() {
     setLoading(true);
     setError('');
     try {
-      const [balanceRes, uploadsRes] = await Promise.all([
+      const [balanceRes, uploadsRes, mapsRes] = await Promise.all([
         api.get('/credits/balance'),
         api.get('/uploads?limit=5'),
+        api.get('/mindmaps'),
       ]);
       setCredits(balanceRes.data.data.balance || 0);
       setUploads(uploadsRes.data.data.uploads || []);
-      setMaps([]); // Maps list placeholder
+      setMaps((mapsRes.data.data || []).slice(0, 5));
     } catch (err) {
       console.error('Erro ao carregar dados do painel:', err);
     } finally {
@@ -143,7 +146,10 @@ export default function Dashboard() {
       <div>
         <h2 className="text-lg font-bold mb-4">Geração Automatizada com IA</h2>
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
-          <div className="p-6 rounded-2xl bg-slate-900 border border-slate-800 hover:border-purple-600/40 transition-all cursor-pointer group">
+          <div
+            onClick={() => navigate('/app/maps/new')}
+            className="p-6 rounded-2xl bg-slate-900 border border-slate-800 hover:border-purple-600/40 transition-all cursor-pointer group"
+          >
             <span className="text-2xl mb-4 block">💡</span>
             <h3 className="font-bold text-slate-100 group-hover:text-purple-400 transition-colors mb-2">
               Gerar por Tema/Tópico
@@ -153,7 +159,10 @@ export default function Dashboard() {
             </p>
           </div>
 
-          <div className="p-6 rounded-2xl bg-slate-900 border border-slate-800 hover:border-purple-600/40 transition-all cursor-pointer group">
+          <div
+            onClick={() => navigate('/app/maps/new')}
+            className="p-6 rounded-2xl bg-slate-900 border border-slate-800 hover:border-purple-600/40 transition-all cursor-pointer group"
+          >
             <span className="text-2xl mb-4 block">📝</span>
             <h3 className="font-bold text-slate-100 group-hover:text-purple-400 transition-colors mb-2">
               Gerar por Texto Colado
@@ -200,7 +209,7 @@ export default function Dashboard() {
         <div className="p-6 rounded-2xl bg-slate-900 border border-slate-800 flex flex-col">
           <h3 className="font-bold text-slate-100 mb-4 flex items-center justify-between">
             <span>Mapas Mentais Recentes</span>
-            <button className="text-xs text-purple-400 hover:underline cursor-pointer">Ver todos</button>
+            <button onClick={() => navigate('/app/maps')} className="text-xs text-purple-400 hover:underline cursor-pointer">Ver todos</button>
           </h3>
 
           {loading ? (
@@ -215,7 +224,9 @@ export default function Dashboard() {
               {maps.map((m) => (
                 <div key={m.id} className="py-3 flex justify-between items-center text-xs">
                   <div>
-                    <p className="font-bold text-slate-200">{m.title}</p>
+                    <Link to={`/app/maps/${m.id}`} className="font-bold text-slate-200 hover:text-purple-400 hover:underline">
+                      🧠 {m.title}
+                    </Link>
                     <p className="text-[10px] text-slate-500">
                       {m.source_type} &bull; {new Date(m.created_at).toLocaleDateString()}
                     </p>

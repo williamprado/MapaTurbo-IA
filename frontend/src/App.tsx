@@ -13,6 +13,9 @@ import Register from './pages/auth/Register';
 import Dashboard from './pages/app/Dashboard';
 import Billing from './pages/app/Billing';
 import Settings from './pages/app/Settings';
+import ListMindMaps from './pages/app/ListMindMaps';
+import CreateMindMap from './pages/app/CreateMindMap';
+import ViewMindMap from './pages/app/ViewMindMap';
 
 // Admin pages
 import AdminDashboard from './pages/admin/AdminDashboard';
@@ -63,7 +66,9 @@ export default function App() {
           }
         >
           <Route index element={<Dashboard />} />
-          <Route path="maps" element={<Dashboard />} />
+          <Route path="maps" element={<ListMindMaps />} />
+          <Route path="maps/new" element={<CreateMindMap />} />
+          <Route path="maps/:id" element={<ViewMindMap />} />
           <Route path="billing" element={<Billing />} />
           <Route path="settings" element={<Settings />} />
         </Route>

@@ -3,6 +3,8 @@ package grok
 import (
 	"context"
 	"errors"
+
+	"mapaturbo-ia/internal/ai/domain"
 )
 
 type Provider struct {
@@ -22,5 +24,9 @@ func (p *Provider) TestConnection(ctx context.Context) (bool, string, error) {
 }
 
 func (p *Provider) GenerateCompletion(ctx context.Context, prompt string) (string, error) {
-	return "", errors.New("generative completion not active in Phase 2B")
+	return "", errors.New("generative completion not active in Phase 3A")
+}
+
+func (p *Provider) GenerateMindMap(ctx context.Context, input domain.GenerateMindMapInput) (*domain.MindMapAIResult, error) {
+	return nil, errors.New("Grok provider mindmap generation not implemented yet")
 }

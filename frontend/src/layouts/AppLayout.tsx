@@ -14,13 +14,12 @@ export default function AppLayout() {
     if (!token || !activeOrgId) return;
 
     // Fetch credits for the active organization
-    api.get(`/health`) // Placeholder or dedicated endpoint if available
-      .then(() => {
-        // Just mock for now or fetch credit balance if we implement the route
-        setCredits(100); 
+    api.get(`/credits/balance`)
+      .then((res) => {
+        setCredits(res.data.data?.balance ?? 0);
       })
       .catch(() => {
-        setCredits(100);
+        setCredits(0);
       });
   }, [activeOrgId, token]);
 

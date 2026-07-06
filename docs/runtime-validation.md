@@ -97,3 +97,31 @@ curl -X GET http://localhost:8080/admin/plans
 
 ### 5. Validação de Armazenamento (MinIO)
 Acesse o console em http://localhost:9001 (User: `mapaturbo`, Pass: `mapaturbo_password`) e confirme se o bucket `mapaturbo-files` foi auto-provisionado com sucesso.
+
+### 6. Validação do Pipeline de Geração com IA (Fase 3A)
+* **Geração por Tema/Texto**:
+  Rode o seguinte cURL para iniciar a geração:
+  ```bash
+  curl -X POST http://localhost:8080/mindmaps/generate \
+    -H "Authorization: Bearer <TOKEN_USUARIO>" \
+    -H "X-Organization-ID: <UUID_ORGANIZACAO>" \
+    -H "Content-Type: application/json" \
+    -d '{
+      "type": "TOPIC",
+      "title": "Mitose",
+      "content": "Divisão celular biológica",
+      "options": {
+        "depth": 3,
+        "language": "pt-BR",
+        "style": "study"
+      }
+    }'
+  ```
+* **Acompanhar status do Job (Polling)**:
+  ```bash
+  curl -H "Authorization: Bearer <TOKEN>" -H "X-Organization-ID: <ORG>" http://localhost:8080/generation-jobs/<jobId>
+  ```
+
+### 7. Validação de Faturamento & Webhooks Asaas
+Consulte o guia detalhado em `docs/payments-validation.md` para testar os endpoints de faturamento localmente simulando as requisições de webhook do Asaas.
+

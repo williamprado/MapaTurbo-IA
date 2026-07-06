@@ -24,6 +24,7 @@ import (
 	"mapaturbo-ia/internal/uploads"
 	"mapaturbo-ia/internal/payments"
 	"mapaturbo-ia/internal/ai"
+	"mapaturbo-ia/internal/mindmaps"
 	"mapaturbo-ia/pkg/config"
 	dbpkg "mapaturbo-ia/pkg/database"
 	"mapaturbo-ia/pkg/logger"
@@ -117,6 +118,7 @@ func main() {
 	uploadHandler := uploads.NewHandler(pool, storage.Client)
 	payHandler := payments.NewHandler(pool, cfg.EncryptionKey)
 	aiHandler := ai.NewHandler(pool, cfg.EncryptionKey)
+	mindmapHandler := mindmaps.NewHandler(pool)
 
 	r.GET("/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
@@ -146,6 +148,15 @@ func main() {
 			tenantGroup.GET("/credits/balance", orgHandler.GetBalance)
 			tenantGroup.POST("/billing/checkout", payHandler.CreateCheckout)
 			tenantGroup.GET("/billing/invoices", payHandler.ListInvoices)
+
+			// Mindmaps routes
+			tenantGroup.POST("/mindmaps/generate", mindmapHandler.Generate)
+			tenantGroup.GET("/generation-jobs/:id", mindmapHandler.GetJob)
+			tenantGroup.GET("/generation-jobs", mindmapHandler.ListJobs)
+			tenantGroup.GET("/mindmaps", mindmapHandler.ListMindMaps)
+			tenantGroup.GET("/mindmaps/:id", mindmapHandler.GetMindMap)
+			tenantGroup.PATCH("/mindmaps/:id", mindmapHandler.UpdateMindMap)
+			tenantGroup.DELETE("/mindmaps/:id", mindmapHandler.DeleteMindMap)
 		}
 
 		adminGroup := authGroup.Group("/admin")

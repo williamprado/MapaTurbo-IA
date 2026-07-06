@@ -135,6 +135,7 @@ type GenerationJob struct {
 	StartedAt      pgtype.Timestamptz
 	FinishedAt     pgtype.Timestamptz
 	CreatedAt      pgtype.Timestamptz
+	MindMapID      pgtype.UUID
 }
 
 type Integration struct {

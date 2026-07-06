@@ -14,6 +14,7 @@ import (
 	"mapaturbo-ia/internal/ai/providers/gemini"
 	"mapaturbo-ia/internal/ai/providers/grok"
 	"mapaturbo-ia/internal/ai/providers/openai"
+	"mapaturbo-ia/internal/ai/domain"
 	"mapaturbo-ia/internal/database"
 	cryptoPkg "mapaturbo-ia/pkg/crypto"
 	"mapaturbo-ia/pkg/response"
@@ -329,7 +330,7 @@ func (h *Handler) TestProviderConnection(c *gin.Context) {
 		decryptedApiKey = dec
 	}
 
-	var prov AIProvider
+	var prov domain.AIProvider
 	switch provider.Slug {
 	case "openai":
 		prov = openai.NewProvider(decryptedApiKey, provider.BaseUrl.String)
