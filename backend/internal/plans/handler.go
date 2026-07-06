@@ -138,6 +138,20 @@ func (h *Handler) Create(c *gin.Context) {
 		return
 	}
 
+	// Create Audit Log
+	actorUserIDStr, _ := c.Get("user_id")
+	var actorUserID pgtype.UUID
+	_ = actorUserID.Scan(actorUserIDStr)
+
+	_, _ = h.queries.CreateAuditLog(c.Request.Context(), database.CreateAuditLogParams{
+		ActorUserID: actorUserID,
+		Action:      "PLAN_CREATED",
+		EntityType:  "plans",
+		EntityID:    plan.ID,
+		Ip:          pgtype.Text{String: c.ClientIP(), Valid: true},
+		UserAgent:   pgtype.Text{String: c.GetHeader("User-Agent"), Valid: true},
+	})
+
 	response.Success(c, http.StatusCreated, "Plan created successfully", plan)
 }
 
@@ -241,6 +255,20 @@ func (h *Handler) Update(c *gin.Context) {
 		response.InternalServerError(c, "Failed to update plan")
 		return
 	}
+
+	// Create Audit Log
+	actorUserIDStr, _ := c.Get("user_id")
+	var actorUserID pgtype.UUID
+	_ = actorUserID.Scan(actorUserIDStr)
+
+	_, _ = h.queries.CreateAuditLog(c.Request.Context(), database.CreateAuditLogParams{
+		ActorUserID: actorUserID,
+		Action:      "PLAN_UPDATED",
+		EntityType:  "plans",
+		EntityID:    plan.ID,
+		Ip:          pgtype.Text{String: c.ClientIP(), Valid: true},
+		UserAgent:   pgtype.Text{String: c.GetHeader("User-Agent"), Valid: true},
+	})
 
 	response.Success(c, http.StatusOK, "Plan updated successfully", plan)
 }

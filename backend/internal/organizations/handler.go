@@ -104,6 +104,21 @@ func (h *Handler) Create(c *gin.Context) {
 		Balance:        1000,
 	})
 
+	// Create Audit Log
+	actorUserIDStr, _ := c.Get("user_id")
+	var actorUserID pgtype.UUID
+	_ = actorUserID.Scan(actorUserIDStr)
+
+	_, _ = h.queries.CreateAuditLog(c.Request.Context(), database.CreateAuditLogParams{
+		ActorUserID:    actorUserID,
+		OrganizationID: org.ID,
+		Action:         "ORGANIZATION_CREATED",
+		EntityType:     "organizations",
+		EntityID:       org.ID,
+		Ip:             pgtype.Text{String: c.ClientIP(), Valid: true},
+		UserAgent:      pgtype.Text{String: c.GetHeader("User-Agent"), Valid: true},
+	})
+
 	response.Success(c, http.StatusCreated, "Organization created successfully", org)
 }
 
@@ -166,6 +181,21 @@ func (h *Handler) Update(c *gin.Context) {
 		response.InternalServerError(c, "Failed to update organization")
 		return
 	}
+
+	// Create Audit Log
+	actorUserIDStr, _ := c.Get("user_id")
+	var actorUserID pgtype.UUID
+	_ = actorUserID.Scan(actorUserIDStr)
+
+	_, _ = h.queries.CreateAuditLog(c.Request.Context(), database.CreateAuditLogParams{
+		ActorUserID:    actorUserID,
+		OrganizationID: org.ID,
+		Action:         "ORGANIZATION_UPDATED",
+		EntityType:     "organizations",
+		EntityID:       org.ID,
+		Ip:             pgtype.Text{String: c.ClientIP(), Valid: true},
+		UserAgent:      pgtype.Text{String: c.GetHeader("User-Agent"), Valid: true},
+	})
 
 	response.Success(c, http.StatusOK, "Organization updated successfully", org)
 }
