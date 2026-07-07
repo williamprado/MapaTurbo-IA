@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { api } from '../../services/api';
 
 interface Org {
@@ -135,7 +136,11 @@ export default function ManageOrganizations() {
             <tbody className="divide-y divide-slate-800">
               {orgs.map((o) => (
                 <tr key={o.id} className="hover:bg-slate-850/50 transition-colors">
-                  <td className="p-4 font-bold text-slate-200">{o.name}</td>
+                  <td className="p-4 font-bold text-slate-200">
+                    <Link to={`/admin/organizations/${o.id}/summary`} className="text-purple-400 hover:text-purple-300 hover:underline">
+                      🏢 {o.name}
+                    </Link>
+                  </td>
                   <td className="p-4 text-slate-400">{o.slug}</td>
                   <td className="p-4">
                     <span className="bg-green-950 text-green-400 border border-green-500/20 text-[9px] uppercase font-bold tracking-wider px-2 py-0.5 rounded">

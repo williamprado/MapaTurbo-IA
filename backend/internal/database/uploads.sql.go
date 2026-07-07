@@ -12,7 +12,7 @@ import (
 )
 
 const countUploadsByOrganization = `-- name: CountUploadsByOrganization :one
-SELECT COUNT(*) FROM uploads WHERE organization_id = $1
+SELECT COUNT(*) FROM uploads WHERE organization_id = $1 AND status != 'FAILED'
 `
 
 func (q *Queries) CountUploadsByOrganization(ctx context.Context, organizationID pgtype.UUID) (int64, error) {
@@ -162,6 +162,17 @@ func (q *Queries) ListUploadsByOrganization(ctx context.Context, arg ListUploads
 		return nil, err
 	}
 	return items, nil
+}
+
+const sumUploadSizeByOrganization = `-- name: SumUploadSizeByOrganization :one
+SELECT COALESCE(SUM(size), 0)::bigint FROM uploads WHERE organization_id = $1 AND status != 'FAILED'
+`
+
+func (q *Queries) SumUploadSizeByOrganization(ctx context.Context, organizationID pgtype.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, sumUploadSizeByOrganization, organizationID)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
 }
 
 const updateUploadStatus = `-- name: UpdateUploadStatus :one

@@ -62,3 +62,16 @@ SELECT ou.id, ou.organization_id, ou.user_id, ou.role, ou.created_at,
 FROM organization_users ou
 JOIN users u ON ou.user_id = u.id
 WHERE ou.organization_id = $1;
+
+-- name: CountOrganizationUsers :one
+SELECT COUNT(*) FROM organization_users WHERE organization_id = $1;
+
+-- name: GetOrganizationSummary :one
+SELECT o.id, o.name, o.slug, o.status, o.created_at,
+       (SELECT COUNT(*) FROM organization_users ou WHERE ou.organization_id = o.id) as users_count,
+       (SELECT COUNT(*) FROM mind_maps m WHERE m.organization_id = o.id) as maps_count,
+       (SELECT COUNT(*) FROM uploads up WHERE up.organization_id = o.id AND up.status != 'FAILED') as uploads_count,
+       (SELECT COALESCE(SUM(up.size), 0)::bigint FROM uploads up WHERE up.organization_id = o.id AND up.status != 'FAILED') as total_storage_bytes,
+       (SELECT COALESCE(cb.balance, 0)::int FROM ai_credit_balances cb WHERE cb.organization_id = o.id LIMIT 1) as credits_balance
+FROM organizations o
+WHERE o.id = $1 LIMIT 1;

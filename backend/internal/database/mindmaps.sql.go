@@ -272,6 +272,59 @@ func (q *Queries) ListMindMapsByOrganization(ctx context.Context, arg ListMindMa
 	return items, nil
 }
 
+const listRecentMindMapsByOrganization = `-- name: ListRecentMindMapsByOrganization :many
+SELECT id, organization_id, user_id, title, source_type, status, created_at, updated_at
+FROM mind_maps
+WHERE organization_id = $1
+ORDER BY created_at DESC
+LIMIT $2
+`
+
+type ListRecentMindMapsByOrganizationParams struct {
+	OrganizationID pgtype.UUID
+	Limit          int32
+}
+
+type ListRecentMindMapsByOrganizationRow struct {
+	ID             pgtype.UUID
+	OrganizationID pgtype.UUID
+	UserID         pgtype.UUID
+	Title          string
+	SourceType     string
+	Status         string
+	CreatedAt      pgtype.Timestamptz
+	UpdatedAt      pgtype.Timestamptz
+}
+
+func (q *Queries) ListRecentMindMapsByOrganization(ctx context.Context, arg ListRecentMindMapsByOrganizationParams) ([]ListRecentMindMapsByOrganizationRow, error) {
+	rows, err := q.db.Query(ctx, listRecentMindMapsByOrganization, arg.OrganizationID, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListRecentMindMapsByOrganizationRow
+	for rows.Next() {
+		var i ListRecentMindMapsByOrganizationRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.OrganizationID,
+			&i.UserID,
+			&i.Title,
+			&i.SourceType,
+			&i.Status,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const updateGenerationJobError = `-- name: UpdateGenerationJobError :one
 UPDATE generation_jobs
 SET status = 'FAILED',

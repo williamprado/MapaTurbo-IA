@@ -18,7 +18,10 @@ ORDER BY created_at DESC
 LIMIT $2 OFFSET $3;
 
 -- name: CountUploadsByOrganization :one
-SELECT COUNT(*) FROM uploads WHERE organization_id = $1;
+SELECT COUNT(*) FROM uploads WHERE organization_id = $1 AND status != 'FAILED';
+
+-- name: SumUploadSizeByOrganization :one
+SELECT COALESCE(SUM(size), 0)::bigint FROM uploads WHERE organization_id = $1 AND status != 'FAILED';
 
 -- name: UpdateUploadStatus :one
 UPDATE uploads

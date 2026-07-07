@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -12,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"mapaturbo-ia/internal/database"
+	"mapaturbo-ia/internal/plans"
 	"mapaturbo-ia/pkg/queue"
 	"mapaturbo-ia/pkg/response"
 	"mapaturbo-ia/pkg/validator"
@@ -122,10 +124,38 @@ func (h *Handler) Generate(c *gin.Context) {
 	var userID pgtype.UUID
 	_ = userID.Scan(userIDStr)
 
+	// Validate Plan limits and Feature gates
+	limitSvc := plans.NewLimitService(h.queries)
+	featureKey := "generateTopic"
+	if req.Type == "TEXT" {
+		featureKey = "generateText"
+	}
+	allowedFeature, err := limitSvc.CanUseFeature(c.Request.Context(), orgID, featureKey)
+	if err != nil {
+		response.InternalServerError(c, "Erro ao verificar limites do plano: "+err.Error())
+		return
+	}
+	if !allowedFeature {
+		limitSvc.LogFeatureBlocked(c.Request.Context(), userID, orgID, featureKey)
+		response.Forbidden(c, "Seu plano atual não permite geração por "+req.Type+". Faça um upgrade.")
+		return
+	}
+
+	canCreate, current, maxMaps, err := limitSvc.CanCreateMindMap(c.Request.Context(), orgID)
+	if err != nil {
+		response.InternalServerError(c, "Erro ao verificar limites de mapas: "+err.Error())
+		return
+	}
+	if !canCreate {
+		limitSvc.LogPlanLimitReached(c.Request.Context(), userID, orgID, "max_maps", maxMaps, current)
+		response.Forbidden(c, fmt.Sprintf("Você atingiu o limite de mapas do seu plano (%d/%d mapas). Faça um upgrade.", current, maxMaps))
+		return
+	}
+
 	// 2. Retrieve action price & balance check
 	actionKey := "GENERATE_MAP_" + req.Type
 	var creditsCost int32 = 10 // fallback default
-	err := h.db.QueryRow(c.Request.Context(),
+	err = h.db.QueryRow(c.Request.Context(),
 		"SELECT credits_cost FROM ai_action_prices WHERE action_key = $1 AND is_active = true LIMIT 1",
 		actionKey,
 	).Scan(&creditsCost)
@@ -230,6 +260,30 @@ func (h *Handler) GenerateFromUpload(c *gin.Context) {
 	}
 	var userID pgtype.UUID
 	_ = userID.Scan(userIDStr)
+
+	// Validate Plan limits and Feature gates
+	limitSvc := plans.NewLimitService(h.queries)
+	allowedFeature, err := limitSvc.CanUseFeature(c.Request.Context(), orgID, "generatePdf")
+	if err != nil {
+		response.InternalServerError(c, "Erro ao verificar limites do plano: "+err.Error())
+		return
+	}
+	if !allowedFeature {
+		limitSvc.LogFeatureBlocked(c.Request.Context(), userID, orgID, "generatePdf")
+		response.Forbidden(c, "Seu plano atual não permite geração a partir de PDF (RAG). Faça um upgrade.")
+		return
+	}
+
+	canCreate, current, maxMaps, err := limitSvc.CanCreateMindMap(c.Request.Context(), orgID)
+	if err != nil {
+		response.InternalServerError(c, "Erro ao verificar limites de mapas: "+err.Error())
+		return
+	}
+	if !canCreate {
+		limitSvc.LogPlanLimitReached(c.Request.Context(), userID, orgID, "max_maps", maxMaps, current)
+		response.Forbidden(c, fmt.Sprintf("Você atingiu o limite de mapas do seu plano (%d/%d mapas). Faça um upgrade.", current, maxMaps))
+		return
+	}
 
 	// 1. Fetch upload details & check status and tenant isolation
 	var upUUID pgtype.UUID
@@ -358,17 +412,72 @@ func (h *Handler) ListJobs(c *gin.Context) {
 	}
 	orgID := orgIDVal.(pgtype.UUID)
 
-	jobs, err := h.queries.ListGenerationJobsByOrganization(c.Request.Context(), database.ListGenerationJobsByOrganizationParams{
+	pageStr := c.DefaultQuery("page", "1")
+	limitStr := c.DefaultQuery("limit", "20")
+	statusQuery := c.Query("status")
+
+	page, _ := strconv.Atoi(pageStr)
+	if page < 1 {
+		page = 1
+	}
+	limit, _ := strconv.Atoi(limitStr)
+	if limit < 1 || limit > 100 {
+		limit = 20
+	}
+	offset := (page - 1) * limit
+
+	var statusNull pgtype.Text
+	if statusQuery != "" {
+		statusNull = pgtype.Text{String: statusQuery, Valid: true}
+	}
+
+	jobs, err := h.queries.ListGenerationJobsByOrganizationPaginated(c.Request.Context(), database.ListGenerationJobsByOrganizationPaginatedParams{
 		OrganizationID: orgID,
-		Limit:          50,
-		Offset:         0,
+		Status:         statusNull,
+		Limit:          int32(limit),
+		Offset:         int32(offset),
 	})
 	if err != nil {
-		response.InternalServerError(c, "Erro ao listar jobs da organização")
+		response.InternalServerError(c, "Erro ao carregar jobs do banco: "+err.Error())
 		return
 	}
 
-	response.Success(c, http.StatusOK, "Jobs list", jobs)
+	total, err := h.queries.CountGenerationJobsByOrganization(c.Request.Context(), database.CountGenerationJobsByOrganizationParams{
+		OrganizationID: orgID,
+		Status:         statusNull,
+	})
+	if err != nil {
+		total = 0
+	}
+
+	if page == 1 {
+		userIDStr, _ := c.Get("user_id")
+		var userID pgtype.UUID
+		_ = userID.Scan(userIDStr)
+
+		meta, _ := json.Marshal(map[string]interface{}{
+			"organizationId": uuidToString(orgID),
+		})
+		_, _ = h.queries.CreateAuditLog(c.Request.Context(), database.CreateAuditLogParams{
+			ActorUserID:    userID,
+			OrganizationID: orgID,
+			Action:         "GENERATION_HISTORY_VIEWED",
+			EntityType:     "generation_jobs",
+			EntityID:       orgID,
+			Metadata:       meta,
+			Ip:             pgtype.Text{String: c.ClientIP(), Valid: true},
+			UserAgent:      pgtype.Text{String: c.GetHeader("User-Agent"), Valid: true},
+		})
+	}
+
+	response.Success(c, http.StatusOK, "Jobs de geração carregados", gin.H{
+		"items": jobs,
+		"pagination": gin.H{
+			"page":  page,
+			"limit": limit,
+			"total": total,
+		},
+	})
 }
 
 func (h *Handler) ListMindMaps(c *gin.Context) {
@@ -701,6 +810,104 @@ func (h *Handler) DeleteMindMap(c *gin.Context) {
 
 	response.Success(c, http.StatusOK, "Mapa mental deletado com sucesso", nil)
 }
+
+type ExportCheckRequest struct {
+	Format string `json:"format" validate:"required,oneof=PNG PDF"`
+}
+
+func (h *Handler) ExportCheck(c *gin.Context) {
+	idStr := c.Param("id")
+	var id pgtype.UUID
+	if err := id.Scan(idStr); err != nil {
+		response.BadRequest(c, "Invalid Mind Map ID format", nil)
+		return
+	}
+
+	var req ExportCheckRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid input data", err.Error())
+		return
+	}
+
+	if err := validator.Validate.Struct(req); err != nil {
+		response.BadRequest(c, "Validation failed", validator.FormatValidationError(err))
+		return
+	}
+
+	orgIDVal, exists := c.Get("org_id")
+	if !exists {
+		response.BadRequest(c, "Organization context required", nil)
+		return
+	}
+	orgID := orgIDVal.(pgtype.UUID)
+
+	userIDStr, exists := c.Get("user_id")
+	if !exists {
+		response.Unauthorized(c, "Authentication required")
+		return
+	}
+	var userID pgtype.UUID
+	_ = userID.Scan(userIDStr)
+
+	// Fetch mind map
+	mindMap, err := h.queries.GetMindMap(c.Request.Context(), id)
+	if err != nil {
+		response.NotFound(c, "Mapa mental não encontrado.")
+		return
+	}
+
+	// Multi-tenant check
+	if uuidToString(mindMap.OrganizationID) != uuidToString(orgID) {
+		response.Forbidden(c, "Você não possui permissão para acessar este mapa.")
+		return
+	}
+
+	// Verify limit features
+	limitSvc := plans.NewLimitService(h.queries)
+	featureKey := "exportPng"
+	if req.Format == "PDF" {
+		featureKey = "exportPdf"
+	}
+
+	allowed, err := limitSvc.CanUseFeature(c.Request.Context(), orgID, featureKey)
+	if err != nil {
+		response.InternalServerError(c, "Erro ao verificar limites do plano: "+err.Error())
+		return
+	}
+
+	if !allowed {
+		limitSvc.LogFeatureBlocked(c.Request.Context(), userID, orgID, featureKey)
+		response.Forbidden(c, fmt.Sprintf("Seu plano atual não permite a exportação no formato %s. Faça um upgrade.", req.Format))
+		return
+	}
+
+	// Write audit log for success
+	action := "MIND_MAP_EXPORTED_PNG"
+	if req.Format == "PDF" {
+		action = "MIND_MAP_EXPORTED_PDF"
+	}
+
+	meta, _ := json.Marshal(map[string]interface{}{
+		"mindMapId":      uuidToString(id),
+		"format":         req.Format,
+		"organizationId": uuidToString(orgID),
+	})
+	_, _ = h.queries.CreateAuditLog(c.Request.Context(), database.CreateAuditLogParams{
+		ActorUserID:    userID,
+		OrganizationID: orgID,
+		Action:         action,
+		EntityType:     "mind_maps",
+		EntityID:       id,
+		Metadata:       meta,
+		Ip:             pgtype.Text{String: c.ClientIP(), Valid: true},
+		UserAgent:      pgtype.Text{String: c.GetHeader("User-Agent"), Valid: true},
+	})
+
+	response.Success(c, http.StatusOK, "Exportação autorizada", gin.H{
+		"authorized": true,
+	})
+}
+
 
 // Helpers
 func uuidToString(u pgtype.UUID) string {

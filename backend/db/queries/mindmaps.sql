@@ -76,3 +76,10 @@ RETURNING id, organization_id, user_id, title, source_type, source_upload_id, st
 
 -- name: DeleteMindMap :exec
 DELETE FROM mind_maps WHERE id = $1;
+
+-- name: ListRecentMindMapsByOrganization :many
+SELECT id, organization_id, user_id, title, source_type, status, created_at, updated_at
+FROM mind_maps
+WHERE organization_id = $1
+ORDER BY created_at DESC
+LIMIT $2;

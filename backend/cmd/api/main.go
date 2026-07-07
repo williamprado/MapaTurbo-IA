@@ -146,12 +146,15 @@ func main() {
 			tenantGroup.GET("/uploads", uploadHandler.List)
 			tenantGroup.GET("/uploads/:id", uploadHandler.GetByID)
 			tenantGroup.GET("/credits/balance", orgHandler.GetBalance)
+			tenantGroup.GET("/credits", orgHandler.GetCreditsHistory)
+			tenantGroup.GET("/dashboard", orgHandler.GetDashboard)
 			tenantGroup.POST("/billing/checkout", payHandler.CreateCheckout)
 			tenantGroup.GET("/billing/invoices", payHandler.ListInvoices)
 
 			// Mindmaps routes
 			tenantGroup.POST("/mindmaps/generate", mindmapHandler.Generate)
 			tenantGroup.POST("/mindmaps/generate-from-upload", mindmapHandler.GenerateFromUpload)
+			tenantGroup.POST("/mindmaps/:id/export/check", mindmapHandler.ExportCheck)
 			tenantGroup.GET("/generation-jobs/:id", mindmapHandler.GetJob)
 			tenantGroup.GET("/generation-jobs", mindmapHandler.ListJobs)
 			tenantGroup.GET("/mindmaps", mindmapHandler.ListMindMaps)
@@ -163,9 +166,11 @@ func main() {
 		adminGroup := authGroup.Group("/admin")
 		adminGroup.Use(middleware.RequireSuperAdmin())
 		{
+			adminGroup.GET("/dashboard", orgHandler.GetAdminDashboard)
 			adminGroup.GET("/organizations", orgHandler.List)
 			adminGroup.POST("/organizations", orgHandler.Create)
 			adminGroup.GET("/organizations/:id", orgHandler.GetByID)
+			adminGroup.GET("/organizations/:id/summary", orgHandler.GetOrganizationSummary)
 			adminGroup.PATCH("/organizations/:id", orgHandler.Update)
 			adminGroup.GET("/organizations/:id/users", orgHandler.ListUsers)
 			adminGroup.POST("/organizations/:id/users", orgHandler.AddUser)

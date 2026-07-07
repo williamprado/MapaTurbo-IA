@@ -121,3 +121,16 @@ WHERE id = $1;
 SELECT id, name, slug, api_key_secure, base_url, default_model, text_model, vision_model, audio_model, embedding_model, embedding_dimensions, is_active, priority, is_default, limit_per_minute, limit_per_day, cost_per_credit, created_at, updated_at
 FROM ai_providers
 WHERE id = $1 LIMIT 1;
+
+-- name: ListCreditTransactionsByOrganization :many
+SELECT id, organization_id, amount, type, description, metadata, created_at
+FROM ai_credit_transactions
+WHERE organization_id = $1
+  AND (sqlc.narg('type')::text IS NULL OR type = sqlc.narg('type'))
+ORDER BY created_at DESC
+LIMIT $2 OFFSET $3;
+
+-- name: CountCreditTransactionsByOrganization :one
+SELECT COUNT(*) FROM ai_credit_transactions
+WHERE organization_id = $1
+  AND (sqlc.narg('type')::text IS NULL OR type = sqlc.narg('type'));

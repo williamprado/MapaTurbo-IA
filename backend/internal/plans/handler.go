@@ -2,6 +2,7 @@ package plans
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
 	"time"
@@ -59,12 +60,67 @@ type UpdatePlanRequest struct {
 }
 
 func (h *Handler) ListPublic(c *gin.Context) {
-	plans, err := h.queries.ListPublicPlans(c.Request.Context())
+	plansList, err := h.queries.ListPublicPlans(c.Request.Context())
 	if err != nil {
-		response.InternalServerError(c, "Failed to retrieve public plans")
+		response.InternalServerError(c, "Failed to retrieve public plans: "+err.Error())
 		return
 	}
-	response.Success(c, http.StatusOK, "Public plans list", plans)
+
+	type PublicPlan struct {
+		ID              string                 `json:"id"`
+		Name            string                 `json:"name"`
+		Description     string                 `json:"description"`
+		PriceMonthly    string                 `json:"price_monthly"`
+		PriceYearly     string                 `json:"price_yearly"`
+		Currency        string                 `json:"currency"`
+		CreditsMonthly  int32                  `json:"credits_monthly"`
+		MaxMaps         int32                  `json:"max_maps"`
+		MaxFiles        int32                  `json:"max_files"`
+		MaxUsers        int32                  `json:"max_users"`
+		MaxStorageBytes int64                  `json:"max_storage_bytes"`
+		Features        map[string]interface{} `json:"features"`
+	}
+
+	var formatted []PublicPlan
+	for _, p := range plansList {
+		var monthlyStr string
+		var yearlyStr string
+		if p.PriceMonthly.Valid {
+			if val, err := p.PriceMonthly.Value(); err == nil && val != nil {
+				monthlyStr = fmt.Sprintf("%s", val)
+			}
+		}
+		if p.PriceYearly.Valid {
+			if val, err := p.PriceYearly.Value(); err == nil && val != nil {
+				yearlyStr = fmt.Sprintf("%s", val)
+			}
+		}
+
+		var features map[string]interface{}
+		if len(p.Features) > 0 {
+			_ = json.Unmarshal(p.Features, &features)
+		}
+		if features == nil {
+			features = make(map[string]interface{})
+		}
+
+		formatted = append(formatted, PublicPlan{
+			ID:              uuidToString(p.ID),
+			Name:            p.Name,
+			Description:     p.Description.String,
+			PriceMonthly:    monthlyStr,
+			PriceYearly:     yearlyStr,
+			Currency:        p.Currency,
+			CreditsMonthly:  p.CreditsMonthly,
+			MaxMaps:         p.MaxMaps,
+			MaxFiles:        p.MaxFiles,
+			MaxUsers:        p.MaxUsers,
+			MaxStorageBytes: p.MaxStorageBytes,
+			Features:        features,
+		})
+	}
+
+	response.Success(c, http.StatusOK, "Public plans list", formatted)
 }
 
 func (h *Handler) List(c *gin.Context) {

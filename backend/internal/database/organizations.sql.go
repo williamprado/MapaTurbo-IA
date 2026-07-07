@@ -11,6 +11,17 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const countOrganizationUsers = `-- name: CountOrganizationUsers :one
+SELECT COUNT(*) FROM organization_users WHERE organization_id = $1
+`
+
+func (q *Queries) CountOrganizationUsers(ctx context.Context, organizationID pgtype.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, countOrganizationUsers, organizationID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countOrganizations = `-- name: CountOrganizations :one
 SELECT COUNT(*) FROM organizations
 `
@@ -110,6 +121,48 @@ func (q *Queries) GetOrganizationBySlug(ctx context.Context, slug string) (Organ
 		&i.Status,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getOrganizationSummary = `-- name: GetOrganizationSummary :one
+SELECT o.id, o.name, o.slug, o.status, o.created_at,
+       (SELECT COUNT(*) FROM organization_users ou WHERE ou.organization_id = o.id) as users_count,
+       (SELECT COUNT(*) FROM mind_maps m WHERE m.organization_id = o.id) as maps_count,
+       (SELECT COUNT(*) FROM uploads up WHERE up.organization_id = o.id AND up.status != 'FAILED') as uploads_count,
+       (SELECT COALESCE(SUM(up.size), 0)::bigint FROM uploads up WHERE up.organization_id = o.id AND up.status != 'FAILED') as total_storage_bytes,
+       (SELECT COALESCE(cb.balance, 0)::int FROM ai_credit_balances cb WHERE cb.organization_id = o.id LIMIT 1) as credits_balance
+FROM organizations o
+WHERE o.id = $1 LIMIT 1
+`
+
+type GetOrganizationSummaryRow struct {
+	ID                pgtype.UUID
+	Name              string
+	Slug              string
+	Status            string
+	CreatedAt         pgtype.Timestamptz
+	UsersCount        int64
+	MapsCount         int64
+	UploadsCount      int64
+	TotalStorageBytes int64
+	CreditsBalance    int32
+}
+
+func (q *Queries) GetOrganizationSummary(ctx context.Context, id pgtype.UUID) (GetOrganizationSummaryRow, error) {
+	row := q.db.QueryRow(ctx, getOrganizationSummary, id)
+	var i GetOrganizationSummaryRow
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Slug,
+		&i.Status,
+		&i.CreatedAt,
+		&i.UsersCount,
+		&i.MapsCount,
+		&i.UploadsCount,
+		&i.TotalStorageBytes,
+		&i.CreditsBalance,
 	)
 	return i, err
 }

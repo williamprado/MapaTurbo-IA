@@ -5,6 +5,10 @@ interface MindMapToolbarProps {
   onAutoLayout: () => void;
   onFitView: () => void;
   saving: boolean;
+  onExportPng: () => void;
+  onExportPdf: () => void;
+  exportingPng: boolean;
+  exportingPdf: boolean;
 }
 
 export default function MindMapToolbar({
@@ -13,6 +17,10 @@ export default function MindMapToolbar({
   onAutoLayout,
   onFitView,
   saving,
+  onExportPng,
+  onExportPdf,
+  exportingPng,
+  exportingPdf,
 }: MindMapToolbarProps) {
   return (
     <div className="flex flex-wrap items-center justify-between gap-4 p-4 bg-slate-900 border-b border-slate-800">
@@ -45,21 +53,23 @@ export default function MindMapToolbar({
           🌲 Auto Layout
         </button>
 
-        {/* AI Action Placeholders */}
-        <div className="flex items-center gap-1 border-l border-slate-800 pl-3">
+        {/* Export Actions */}
+        <div className="flex items-center gap-1.5 border-l border-slate-800 pl-3">
           <button
-            disabled
-            className="px-2.5 py-1.5 bg-purple-950/30 text-purple-400/40 border border-purple-500/10 text-[9px] font-bold rounded-lg"
-            title="Funcionalidade planejada para a Fase 4"
+            onClick={onExportPng}
+            disabled={exportingPng}
+            className="px-3 py-1.5 bg-slate-950 hover:bg-slate-800 border border-slate-800 text-[10px] font-bold rounded-lg transition-colors cursor-pointer text-slate-300 disabled:opacity-40"
+            title="Exportar mapa mental completo como imagem PNG"
           >
-            ⚡ Expandir (IA)
+            {exportingPng ? 'Exportando PNG...' : '🖼️ Exportar PNG'}
           </button>
           <button
-            disabled
-            className="px-2.5 py-1.5 bg-purple-950/30 text-purple-400/40 border border-purple-500/10 text-[9px] font-bold rounded-lg"
-            title="Funcionalidade planejada para a Fase 4"
+            onClick={onExportPdf}
+            disabled={exportingPdf}
+            className="px-3 py-1.5 bg-slate-950 hover:bg-slate-800 border border-slate-800 text-[10px] font-bold rounded-lg transition-colors cursor-pointer text-slate-300 disabled:opacity-40"
+            title="Exportar mapa mental completo como documento PDF"
           >
-            💡 Gerar Flashcards
+            {exportingPdf ? 'Exportando PDF...' : '📄 Exportar PDF'}
           </button>
         </div>
 

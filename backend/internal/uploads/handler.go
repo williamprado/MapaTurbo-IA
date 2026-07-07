@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -14,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"go.uber.org/zap"
 	"mapaturbo-ia/internal/database"
+	"mapaturbo-ia/internal/plans"
 	"mapaturbo-ia/pkg/logger"
 	"mapaturbo-ia/pkg/queue"
 	"mapaturbo-ia/pkg/response"
@@ -69,6 +71,35 @@ func (h *Handler) Upload(c *gin.Context) {
 	isPDF := mime == "application/pdf" || strings.HasSuffix(strings.ToLower(file.Filename), ".pdf")
 	if !isPDF {
 		response.BadRequest(c, "Apenas arquivos PDF são permitidos.", nil)
+		return
+	}
+
+	// Validate Plan limits and Feature gates
+	limitSvc := plans.NewLimitService(h.queries)
+	allowedFeature, err := limitSvc.CanUseFeature(c.Request.Context(), orgID, "uploadPdf")
+	if err != nil {
+		response.InternalServerError(c, "Erro ao verificar limites do plano: "+err.Error())
+		return
+	}
+	if !allowedFeature {
+		limitSvc.LogFeatureBlocked(c.Request.Context(), userID, orgID, "uploadPdf")
+		response.Forbidden(c, "Seu plano atual não permite o envio de arquivos PDF. Faça um upgrade.")
+		return
+	}
+
+	canUpload, currentCount, maxFiles, totalSize, maxStorage, err := limitSvc.CanUploadFile(c.Request.Context(), orgID, file.Size)
+	if err != nil {
+		response.InternalServerError(c, "Erro ao verificar limites de arquivos: "+err.Error())
+		return
+	}
+	if !canUpload {
+		limitSvc.LogPlanLimitReached(c.Request.Context(), userID, orgID, "max_files", maxFiles, currentCount)
+		
+		if currentCount >= maxFiles {
+			response.Forbidden(c, fmt.Sprintf("Você atingiu o limite de arquivos enviados do seu plano (%d/%d arquivos). Faça um upgrade.", currentCount, maxFiles))
+		} else {
+			response.Forbidden(c, fmt.Sprintf("O espaço de armazenamento do seu plano foi excedido (%d MB / %d MB). Faça um upgrade.", totalSize/(1024*1024), maxStorage/(1024*1024)))
+		}
 		return
 	}
 

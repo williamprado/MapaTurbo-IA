@@ -17,10 +17,13 @@ import ListMindMaps from './pages/app/ListMindMaps';
 import CreateMindMap from './pages/app/CreateMindMap';
 import ViewMindMap from './pages/app/ViewMindMap';
 import MindMapEditor from './pages/app/MindMapEditor';
+import CreditsHistory from './pages/app/CreditsHistory';
+import GenerationJobsHistory from './pages/app/GenerationJobsHistory';
 
 // Admin pages
 import AdminDashboard from './pages/admin/AdminDashboard';
 import ManageOrganizations from './pages/admin/ManageOrganizations';
+import OrganizationSummary from './pages/admin/OrganizationSummary';
 import ManagePlans from './pages/admin/ManagePlans';
 import ManageUsers from './pages/admin/ManageUsers';
 import ManageSettings from './pages/admin/ManageSettings';
@@ -66,12 +69,14 @@ export default function App() {
             </ProtectedRoute>
           }
         >
-          <Route index element={<Dashboard />} />
+           <Route index element={<Dashboard />} />
           <Route path="maps" element={<ListMindMaps />} />
           <Route path="maps/new" element={<CreateMindMap />} />
           <Route path="maps/:id" element={<ViewMindMap />} />
           <Route path="maps/:id/editor" element={<MindMapEditor />} />
           <Route path="billing" element={<Billing />} />
+          <Route path="credits" element={<CreditsHistory />} />
+          <Route path="generation-jobs" element={<GenerationJobsHistory />} />
           <Route path="settings" element={<Settings />} />
         </Route>
 
@@ -86,6 +91,7 @@ export default function App() {
         >
           <Route index element={<AdminDashboard />} />
           <Route path="organizations" element={<ManageOrganizations />} />
+          <Route path="organizations/:id/summary" element={<OrganizationSummary />} />
           <Route path="plans" element={<ManagePlans />} />
           <Route path="users" element={<ManageUsers />} />
           <Route path="settings" element={<ManageSettings />} />

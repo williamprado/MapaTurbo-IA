@@ -12,6 +12,8 @@ import {
 } from '@xyflow/react';
 import type { Node, Edge } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
+import { toPng } from 'html-to-image';
+import { jsPDF } from 'jspdf';
 
 import { api } from '../../services/api';
 import {
@@ -47,6 +49,8 @@ function FlowEditorInner() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [hasChanges, setHasChanges] = useState(false);
+  const [exportingPng, setExportingPng] = useState(false);
+  const [exportingPdf, setExportingPdf] = useState(false);
 
   // React Flow states
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
@@ -335,6 +339,76 @@ function FlowEditorInner() {
     }
   };
 
+  const handleExport = async (format: 'PNG' | 'PDF') => {
+    if (format === 'PNG') setExportingPng(true);
+    else setExportingPdf(true);
+
+    setError('');
+    setSuccess('');
+
+    try {
+      // 1. Call Backend check
+      const authRes = await api.post(`/mindmaps/${id}/export/check`, { format });
+      if (!authRes.data || !authRes.data.data || !authRes.data.data.authorized) {
+        throw new Error("Não autorizado");
+      }
+
+      // 2. Perform HTML element capture
+      const flowElement = document.querySelector('.react-flow') as HTMLElement;
+      if (!flowElement) {
+        throw new Error("Não foi possível encontrar a tela do mapa mental.");
+      }
+
+      // Hide controls and minimap temporarily for clean capture
+      const controls = document.querySelector('.react-flow__controls') as HTMLElement;
+      const minimap = document.querySelector('.react-flow__minimap') as HTMLElement;
+      if (controls) controls.style.visibility = 'hidden';
+      if (minimap) minimap.style.visibility = 'hidden';
+
+      const dataUrl = await toPng(flowElement, {
+        backgroundColor: '#020617', // Slate 950 matching background
+        quality: 0.95,
+        style: {
+          transform: 'none',
+        }
+      });
+
+      // Restore visibility
+      if (controls) controls.style.visibility = 'visible';
+      if (minimap) minimap.style.visibility = 'visible';
+
+      if (format === 'PNG') {
+        const link = document.createElement('a');
+        link.download = `${mapTitle || 'mapa-mental'}.png`;
+        link.href = dataUrl;
+        link.click();
+        setSuccess('Mapa exportado como PNG com sucesso.');
+      } else {
+        const pdf = new jsPDF({
+          orientation: 'landscape',
+          unit: 'px',
+          format: [flowElement.offsetWidth, flowElement.offsetHeight]
+        });
+        pdf.addImage(dataUrl, 'PNG', 0, 0, flowElement.offsetWidth, flowElement.offsetHeight);
+        pdf.save(`${mapTitle || 'mapa-mental'}.pdf`);
+        setSuccess('Mapa exportado como PDF com sucesso.');
+      }
+    } catch (err: any) {
+      console.error(err);
+      if (err.response && err.response.data && err.response.data.message) {
+        setError(err.response.data.message);
+      } else if (err.response && err.response.status === 403) {
+        setError('Seu plano atual não permite exportações neste formato.');
+      } else {
+        setError(err.message || 'Erro técnico na geração da exportação do mapa.');
+      }
+    } finally {
+      if (format === 'PNG') setExportingPng(false);
+      else setExportingPdf(false);
+    }
+  };
+
+
   const handleSelectionChange = (params: { nodes: Node[] }) => {
     if (params.nodes.length > 0) {
       setSelectedNodeId(params.nodes[0].id);
@@ -370,6 +444,10 @@ function FlowEditorInner() {
         onAutoLayout={handleAutoLayout}
         onFitView={() => fitView({ padding: 0.2 })}
         saving={saving}
+        onExportPng={() => handleExport('PNG')}
+        onExportPdf={() => handleExport('PDF')}
+        exportingPng={exportingPng}
+        exportingPdf={exportingPdf}
       />
 
       {error && (

@@ -12,6 +12,24 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const countCreditTransactionsByOrganization = `-- name: CountCreditTransactionsByOrganization :one
+SELECT COUNT(*) FROM ai_credit_transactions
+WHERE organization_id = $1
+  AND ($2::text IS NULL OR type = $2)
+`
+
+type CountCreditTransactionsByOrganizationParams struct {
+	OrganizationID pgtype.UUID
+	Type           pgtype.Text
+}
+
+func (q *Queries) CountCreditTransactionsByOrganization(ctx context.Context, arg CountCreditTransactionsByOrganizationParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countCreditTransactionsByOrganization, arg.OrganizationID, arg.Type)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createAiActionPrice = `-- name: CreateAiActionPrice :one
 INSERT INTO ai_action_prices (action_key, name, description, credits_cost, is_active, metadata)
 VALUES ($1, $2, $3, $4, $5, $6)
@@ -431,6 +449,55 @@ func (q *Queries) ListAiProviders(ctx context.Context) ([]AiProvider, error) {
 			&i.CostPerCredit,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listCreditTransactionsByOrganization = `-- name: ListCreditTransactionsByOrganization :many
+SELECT id, organization_id, amount, type, description, metadata, created_at
+FROM ai_credit_transactions
+WHERE organization_id = $1
+  AND ($4::text IS NULL OR type = $4)
+ORDER BY created_at DESC
+LIMIT $2 OFFSET $3
+`
+
+type ListCreditTransactionsByOrganizationParams struct {
+	OrganizationID pgtype.UUID
+	Limit          int32
+	Offset         int32
+	Type           pgtype.Text
+}
+
+func (q *Queries) ListCreditTransactionsByOrganization(ctx context.Context, arg ListCreditTransactionsByOrganizationParams) ([]AiCreditTransaction, error) {
+	rows, err := q.db.Query(ctx, listCreditTransactionsByOrganization,
+		arg.OrganizationID,
+		arg.Limit,
+		arg.Offset,
+		arg.Type,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []AiCreditTransaction
+	for rows.Next() {
+		var i AiCreditTransaction
+		if err := rows.Scan(
+			&i.ID,
+			&i.OrganizationID,
+			&i.Amount,
+			&i.Type,
+			&i.Description,
+			&i.Metadata,
+			&i.CreatedAt,
 		); err != nil {
 			return nil, err
 		}
