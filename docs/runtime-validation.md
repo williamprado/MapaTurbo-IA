@@ -176,4 +176,61 @@ Consulte o guia detalhado em `docs/payments-validation.md` para testar os endpoi
   ```
   Consulte o guia completo em `docs/pdf-rag-validation.md` para mais informações.
 
+### 10. Validação dos Endpoints Comerciais (Fase 4A)
+Abaixo estão listados os comandos para testar os endpoints adicionados na Fase 4A:
+
+* **Validação de Autorização de Exportação (Check)**:
+  Submeta a requisição de validação para download de mapas em PDF ou PNG:
+  ```bash
+  curl -X POST http://localhost:8080/mindmaps/<MINDMAP_ID>/export/check \
+    -H "Authorization: Bearer <TOKEN>" \
+    -H "X-Organization-ID: <ORG>" \
+    -H "Content-Type: application/json" \
+    -d '{"format": "PNG"}'
+  ```
+  * Se o plano permitir a exportação, retornará `200 OK` com `{"authorized": true}`.
+  * Caso contrário, retornará `403 Forbidden` com a devida mensagem explicativa.
+
+* **Histórico Paginado de Créditos**:
+  ```bash
+  curl -X GET "http://localhost:8080/app/credits?page=1&pageSize=10" \
+    -H "Authorization: Bearer <TOKEN>" \
+    -H "X-Organization-ID: <ORG>"
+  ```
+  O backend deduz e exibe o extrato ordenado por data e registra o log `CREDITS_VIEWED`.
+
+* **Histórico Paginado de Jobs de Geração**:
+  ```bash
+  curl -X GET "http://localhost:8080/app/generation-jobs?page=1&pageSize=10" \
+    -H "Authorization: Bearer <TOKEN>" \
+    -H "X-Organization-ID: <ORG>"
+  ```
+  Retorna a lista de status de processamento da IA e registra `GENERATION_HISTORY_VIEWED`.
+
+* **Dashboard Unificado do Usuário**:
+  ```bash
+  curl -X GET http://localhost:8080/app/dashboard \
+    -H "Authorization: Bearer <TOKEN>" \
+    -H "X-Organization-ID: <ORG>"
+  ```
+
+* **Dashboard de Estatísticas Globais do Super Admin**:
+  ```bash
+  curl -X GET http://localhost:8080/admin/dashboard \
+    -H "Authorization: Bearer <TOKEN_SUPER_ADMIN>"
+  ```
+
+* **Detalhamento Unificado de Organização (Admin)**:
+  ```bash
+  curl -X GET http://localhost:8080/admin/organizations/<ORGANIZATION_UUID>/summary \
+    -H "Authorization: Bearer <TOKEN_SUPER_ADMIN>"
+  ```
+
+* **Listagem Pública de Planos**:
+  ```bash
+  curl -X GET http://localhost:8080/plans/public
+  ```
+  Devem retornar apenas os planos ativos e marcados como públicos.
+
+
 

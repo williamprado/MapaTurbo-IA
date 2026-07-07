@@ -1,14 +1,25 @@
-FROM node:20-alpine
+FROM node:20-alpine AS builder
 
 WORKDIR /app
 
 COPY package*.json ./
-RUN npm install
+RUN npm ci
 
 COPY . .
 
+ARG VITE_API_URL
+ARG VITE_APP_URL
+
+ENV VITE_API_URL=$VITE_API_URL
+ENV VITE_APP_URL=$VITE_APP_URL
+
 RUN npm run build
 
-EXPOSE 5173
+FROM nginx:1.27-alpine AS runner
 
-CMD ["npm", "run", "preview", "--", "--host", "0.0.0.0", "--port", "5173"]
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY --from=builder /app/dist /usr/share/nginx/html
+
+EXPOSE 80
+
+CMD ["nginx", "-g", "daemon off;"]
