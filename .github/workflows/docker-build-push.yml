@@ -1,0 +1,87 @@
+name: Build and Push Docker Images
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: docker-build-${{ github.ref_name }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  DOCKER_USERNAME: ${{ vars.DOCKER_USERNAME || secrets.DOCKER_USERNAME }}
+  DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD || secrets.DOCKER_TOKEN }}
+  DOCKER_NAMESPACE: ${{ vars.DOCKER_NAMESPACE || vars.DOCKER_USERNAME || secrets.DOCKER_USERNAME }}
+  IMAGE_PREFIX: mapaturbo
+  VERSION_PREFIX: v1.0
+
+  VITE_API_URL: ${{ vars.VITE_API_URL }}
+  VITE_APP_URL: ${{ vars.VITE_APP_URL }}
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Validate Docker Hub credentials
+        if: github.event_name != 'pull_request'
+        shell: bash
+        run: |
+          if [ -z "${DOCKER_USERNAME}" ] || [ -z "${DOCKER_PASSWORD}" ]; then
+            echo "::error::Configure os secrets/vars do repositorio para Docker Hub antes de rodar este workflow."
+            echo "::error::Necessario: DOCKER_USERNAME (secret ou variable) e DOCKER_PASSWORD ou DOCKER_TOKEN (secret)."
+            exit 1
+          fi
+
+          if [ -z "${DOCKER_NAMESPACE}" ]; then
+            echo "::error::Configure DOCKER_NAMESPACE ou DOCKER_USERNAME."
+            exit 1
+          fi
+
+      - name: Validate frontend public variables
+        shell: bash
+        run: |
+          if [ -z "${VITE_API_URL}" ]; then
+            echo "::warning::VITE_API_URL nao configurado. O build pode apontar para fallback interno do projeto."
+          fi
+
+          if [ -z "${VITE_APP_URL}" ]; then
+            echo "::warning::VITE_APP_URL nao configurado. O build pode apontar para fallback interno do projeto."
+          fi
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          username: ${{ env.DOCKER_USERNAME }}
+          password: ${{ env.DOCKER_PASSWORD }}
+
+      - name: Make build script executable
+        run: chmod +x build_and_push.sh
+
+      - name: Build only for pull request
+        if: github.event_name == 'pull_request'
+        shell: bash
+        run: |
+          echo "PR build - validacao sem push para Docker Hub."
+          PUSH_IMAGES=false ./build_and_push.sh
+
+      - name: Build and push images
+        if: github.event_name != 'pull_request'
+        shell: bash
+        run: |
+          PUSH_IMAGES=true ./build_and_push.sh

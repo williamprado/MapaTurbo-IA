@@ -1,25 +1,37 @@
+# syntax=docker/dockerfile:1
+
 FROM golang:1.26-alpine AS builder
 
-RUN apk add --no-cache git
-
 WORKDIR /app
+
+RUN apk add --no-cache git ca-certificates tzdata
 
 COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
 
-RUN CGO_ENABLED=0 GOOS=linux go build -o /app/api ./cmd/api
-RUN CGO_ENABLED=0 GOOS=linux go build -o /app/worker ./cmd/worker
+ARG APP_TARGET=api
 
-FROM alpine:latest AS api
+RUN if [ "$APP_TARGET" = "api" ]; then \
+      go build -o /out/app ./cmd/api; \
+    elif [ "$APP_TARGET" = "worker" ]; then \
+      go build -o /out/app ./cmd/worker; \
+    else \
+      echo "APP_TARGET invalido: $APP_TARGET. Use api ou worker." && exit 1; \
+    fi
+
+FROM alpine:3.20 AS runner
+
 WORKDIR /app
-COPY --from=builder /app/api /app/api
-COPY --from=builder /app/db/migrations /app/db/migrations
+
+RUN apk add --no-cache ca-certificates tzdata wget
+
+ENV TZ=America/Sao_Paulo
+ENV APP_ENV=production
+
+COPY --from=builder /out/app /app/app
+
 EXPOSE 8080
-CMD ["/app/api"]
 
-FROM alpine:latest AS worker
-WORKDIR /app
-COPY --from=builder /app/worker /app/worker
-CMD ["/app/worker"]
+CMD ["/app/app"]

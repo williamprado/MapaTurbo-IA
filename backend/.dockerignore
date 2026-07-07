@@ -1,0 +1,13 @@
+.git
+.gitignore
+.env
+.env.*
+tmp/
+logs/
+*.log
+api
+worker
+bin/
+coverage.out
+vendor/
+node_modules/

@@ -137,9 +137,12 @@ Retorna o perfil autenticado com cargo global `SUPER_ADMIN` e as organizações 
 
 ---
 
-## 📖 Documentação de Testes Detalhada
-Para testar e validar de ponta a ponta cada uma das fases do projeto:
+## 📖 Documentação Detalhada
+Para testar, validar e implantar cada uma das fases do projeto:
 * **Validação Runtime**: [docs/runtime-validation.md](file:///I:/MapaTurbo%20IA/docs/runtime-validation.md)
 * **Geração por IA & Créditos**: [docs/ai-generation-validation.md](file:///I:/MapaTurbo%20IA/docs/ai-generation-validation.md)
 * **Editor Visual React Flow**: [docs/mindmap-editor-validation.md](file:///I:/MapaTurbo%20IA/docs/mindmap-editor-validation.md)
+* **CI/CD & Docker Hub**: [docs/github-actions-dockerhub.md](file:///I:/MapaTurbo%20IA/docs/github-actions-dockerhub.md)
+* **Deploy Docker Swarm / Portainer**: [docs/deploy-swarm.md](file:///I:/MapaTurbo%20IA/docs/deploy-swarm.md)
+* **Checklist MVP Comercial**: [docs/mvp-validation.md](file:///I:/MapaTurbo%20IA/docs/mvp-validation.md)
 

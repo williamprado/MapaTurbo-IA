@@ -1,33 +1,33 @@
 version: '3.8'
 
 services:
-  postgres:
+  mapaturbo_postgres:
     image: pgvector/pgvector:pg16
     networks:
-      - mapaturbo_net
+      - wapainelnet
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-mapaturbo}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mapaturbo_password}
-      POSTGRES_DB: ${POSTGRES_DB:-mapaturbo}
+      POSTGRES_USER: mapaturbo
+      POSTGRES_PASSWORD: TROQUE_SENHA_FORTE
+      POSTGRES_DB: mapaturbo
     volumes:
-      - postgres_prod_data:/var/lib/postgresql/data
+      - mapaturbo_postgres:/var/lib/postgresql/data
     deploy:
       replicas: 1
       placement:
         constraints:
           - node.role == manager
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-mapaturbo} -d $${POSTGRES_DB:-mapaturbo}"]
+      test: ["CMD-SHELL", "pg_isready -U mapaturbo -d mapaturbo"]
       interval: 10s
       timeout: 5s
       retries: 5
 
-  redis:
+  mapaturbo_redis:
     image: redis:7-alpine
     networks:
-      - mapaturbo_net
+      - wapainelnet
     volumes:
-      - redis_prod_data:/data
+      - mapaturbo_redis:/data
     deploy:
       replicas: 1
       placement:
@@ -39,52 +39,52 @@ services:
       timeout: 5s
       retries: 5
 
-  minio:
-    image: minio/minio
+  mapaturbo_minio:
+    image: minio/minio:latest
     networks:
-      - mapaturbo_net
+      - wapainelnet
     environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-mapaturbo}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-mapaturbo_password}
+      MINIO_ROOT_USER: mapaturbo
+      MINIO_ROOT_PASSWORD: TROQUE_MINIO_PASSWORD
     command: server /data --console-address ":9001"
     volumes:
-      - minio_prod_data:/data
+      - mapaturbo_minio:/data
     deploy:
       replicas: 1
       labels:
         - "traefik.enable=true"
-        - "traefik.http.routers.minio.rule=Host(`s3.mapaturbo.local`)"
-        - "traefik.http.routers.minio.entrypoints=web"
-        - "traefik.http.services.minio.loadbalancer.server.port=9000"
-        - "traefik.http.routers.minio_console.rule=Host(`console-s3.mapaturbo.local`)"
-        - "traefik.http.routers.minio_console.entrypoints=web"
-        - "traefik.http.services.minio_console.loadbalancer.server.port=9001"
+        - "traefik.http.routers.mapaturbo_minio.rule=Host(`miniomapaturbo.wapainel.com.br`)"
+        - "traefik.http.routers.mapaturbo_minio.entrypoints=web"
+        - "traefik.http.services.mapaturbo_minio.loadbalancer.server.port=9000"
+        - "traefik.http.routers.mapaturbo_minio_console.rule=Host(`minioconsolemapaturbo.wapainel.com.br`)"
+        - "traefik.http.routers.mapaturbo_minio_console.entrypoints=web"
+        - "traefik.http.services.mapaturbo_minio_console.loadbalancer.server.port=9001"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
       interval: 10s
       timeout: 5s
       retries: 5
 
-  api:
-    image: william/mapaturbo-api:latest
+  mapaturbo_api:
+    image: williamwilmer10/mapaturbo-api:latest
     networks:
-      - mapaturbo_net
+      - wapainelnet
     environment:
       - NODE_ENV=production
       - APP_ENV=production
       - SERVER_PORT=8080
-      - DATABASE_URL=${DATABASE_URL}
-      - REDIS_ADDR=redis:6379
-      - JWT_SECRET=${JWT_SECRET}
-      - ENCRYPTION_KEY=${ENCRYPTION_KEY}
-      - MINIO_ENDPOINT=minio:9000
-      - MINIO_ACCESS_KEY=${MINIO_ROOT_USER:-mapaturbo}
-      - MINIO_SECRET_KEY=${MINIO_ROOT_PASSWORD:-mapaturbo_password}
-      - MINIO_BUCKET=${MINIO_BUCKET:-mapaturbo-files}
-      - MINIO_USE_SSL=${MINIO_USE_SSL:-false}
-      - ASAAS_API_KEY=${ASAAS_API_KEY}
-      - ASAAS_WEBHOOK_TOKEN=${ASAAS_WEBHOOK_TOKEN}
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - DATABASE_URL=postgres://mapaturbo:TROQUE_SENHA_FORTE@mapaturbo_postgres:5432/mapaturbo?sslmode=disable
+      - REDIS_ADDR=mapaturbo_redis:6379
+      - JWT_SECRET=TROQUE_JWT_SECRET_FORTE
+      - ENCRYPTION_KEY=TROQUE_AES_CHAVE_32_BYTES_FORTE
+      - MINIO_ENDPOINT=mapaturbo_minio:9000
+      - MINIO_ACCESS_KEY=mapaturbo
+      - MINIO_SECRET_KEY=TROQUE_MINIO_PASSWORD
+      - MINIO_BUCKET=mapaturbo-files
+      - MINIO_USE_SSL=false
+      - ASAAS_API_KEY=TROQUE_ASAAS_API_KEY
+      - ASAAS_WEBHOOK_TOKEN=TROQUE_ASAAS_WEBHOOK_TOKEN
+      - OPENAI_API_KEY=TROQUE_OPENAI_API_KEY
     deploy:
       replicas: 2
       update_config:
@@ -92,51 +92,51 @@ services:
         delay: 10s
       labels:
         - "traefik.enable=true"
-        - "traefik.http.routers.api.rule=Host(`api.mapaturbo.local`)"
-        - "traefik.http.routers.api.entrypoints=web"
-        - "traefik.http.services.api.loadbalancer.server.port=8080"
+        - "traefik.http.routers.mapaturbo_api.rule=Host(`apimapaturbo.wapainel.com.br`)"
+        - "traefik.http.routers.mapaturbo_api.entrypoints=web"
+        - "traefik.http.services.mapaturbo_api.loadbalancer.server.port=8080"
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080/health"]
       interval: 30s
       timeout: 5s
       retries: 3
 
-  worker:
-    image: william/mapaturbo-worker:latest
+  mapaturbo_worker:
+    image: williamwilmer10/mapaturbo-worker:latest
     networks:
-      - mapaturbo_net
+      - wapainelnet
     environment:
       - NODE_ENV=production
       - APP_ENV=production
-      - DATABASE_URL=${DATABASE_URL}
-      - REDIS_ADDR=redis:6379
-      - JWT_SECRET=${JWT_SECRET}
-      - ENCRYPTION_KEY=${ENCRYPTION_KEY}
-      - MINIO_ENDPOINT=minio:9000
-      - MINIO_ACCESS_KEY=${MINIO_ROOT_USER:-mapaturbo}
-      - MINIO_SECRET_KEY=${MINIO_ROOT_PASSWORD:-mapaturbo_password}
-      - MINIO_BUCKET=${MINIO_BUCKET:-mapaturbo-files}
-      - MINIO_USE_SSL=${MINIO_USE_SSL:-false}
-      - ASAAS_API_KEY=${ASAAS_API_KEY}
-      - ASAAS_WEBHOOK_TOKEN=${ASAAS_WEBHOOK_TOKEN}
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - DATABASE_URL=postgres://mapaturbo:TROQUE_SENHA_FORTE@mapaturbo_postgres:5432/mapaturbo?sslmode=disable
+      - REDIS_ADDR=mapaturbo_redis:6379
+      - JWT_SECRET=TROQUE_JWT_SECRET_FORTE
+      - ENCRYPTION_KEY=TROQUE_AES_CHAVE_32_BYTES_FORTE
+      - MINIO_ENDPOINT=mapaturbo_minio:9000
+      - MINIO_ACCESS_KEY=mapaturbo
+      - MINIO_SECRET_KEY=TROQUE_MINIO_PASSWORD
+      - MINIO_BUCKET=mapaturbo-files
+      - MINIO_USE_SSL=false
+      - ASAAS_API_KEY=TROQUE_ASAAS_API_KEY
+      - ASAAS_WEBHOOK_TOKEN=TROQUE_ASAAS_WEBHOOK_TOKEN
+      - OPENAI_API_KEY=TROQUE_OPENAI_API_KEY
     deploy:
       replicas: 1
       update_config:
         parallelism: 1
         delay: 10s
 
-  web:
-    image: william/mapaturbo-web:latest
+  mapaturbo_web:
+    image: williamwilmer10/mapaturbo-web:latest
     networks:
-      - mapaturbo_net
+      - wapainelnet
     deploy:
       replicas: 2
       labels:
         - "traefik.enable=true"
-        - "traefik.http.routers.web.rule=Host(`mapaturbo.local`)"
-        - "traefik.http.routers.web.entrypoints=web"
-        - "traefik.http.services.web.loadbalancer.server.port=80"
+        - "traefik.http.routers.mapaturbo_web.rule=Host(`mapaturbo.wapainel.com.br`)"
+        - "traefik.http.routers.mapaturbo_web.entrypoints=web"
+        - "traefik.http.services.mapaturbo_web.loadbalancer.server.port=80"
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://localhost/"]
       interval: 30s
@@ -144,10 +144,13 @@ services:
       retries: 3
 
 networks:
-  mapaturbo_net:
-    driver: overlay
+  wapainelnet:
+    external: true
 
 volumes:
-  postgres_prod_data:
-  redis_prod_data:
-  minio_prod_data:
+  mapaturbo_postgres:
+    external: true
+  mapaturbo_redis:
+    external: true
+  mapaturbo_minio:
+    external: true

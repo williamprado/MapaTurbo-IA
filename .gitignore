@@ -1,40 +1,57 @@
-# Environment variables
-.env
-.env.local
-.env.production
-
-# Node / Frontend
+# Dependency directories
 node_modules/
+frontend/node_modules/
+
+# Build and distribution directories
 dist/
 build/
-.eslintcache
-*.log
-
-# Go / Backend
+frontend/dist/
 backend/bin/
-backend/tmp/
-backend/dist/
-backend/backend
 backend/api
 backend/worker
-main
-worker
-api
-migrate
-*.exe
+backend/tmp/
 
-# Docker data directories (locally mounted, if any)
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Local storage and data directories
+uploads/
+storage/
+minio_data/
+postgres_data/
+redis_data/
 docker/postgres_data/
 docker/redis_data/
 docker/minio_data/
 
-# OS / IDE
+# OS metadata
 .DS_Store
 Thumbs.db
-.idea/
+
+# IDE configurations
 .vscode/
+.idea/
 *.suo
 *.ntvs*
 *.njsproj
 *.sln
 *.swp
+
+# Override compose/stack configuration
+docker-compose.override.yml
+stack.override.yml
+
+# Certificates and keys
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+secrets/
+docker/secrets/
+
+# Logs
+logs/
+*.log
