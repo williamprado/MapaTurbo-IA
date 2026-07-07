@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5"
@@ -41,9 +42,46 @@ type GenerateRequest struct {
 	Options GenerateOptions `json:"options"`
 }
 
+type Position struct {
+	X float64 `json:"x"`
+	Y float64 `json:"y"`
+}
+
+type Viewport struct {
+	X    float64 `json:"x"`
+	Y    float64 `json:"y"`
+	Zoom float64 `json:"zoom"`
+}
+
+type AINode struct {
+	ID       string    `json:"id"`
+	ParentID *string   `json:"parentId"`
+	Title    string    `json:"title"`
+	Content  string    `json:"content"`
+	Level    int       `json:"level"`
+	Order    int       `json:"order"`
+	Position *Position `json:"position,omitempty"`
+}
+
+type AIEdge struct {
+	ID     string `json:"id,omitempty"`
+	Source string `json:"source"`
+	Target string `json:"target"`
+}
+
+type MindMapData struct {
+	Title        string    `json:"title"`
+	CentralTopic string    `json:"centralTopic"`
+	Summary      string    `json:"summary"`
+	Nodes        []AINode  `json:"nodes"`
+	Edges        []AIEdge  `json:"edges"`
+	Viewport     *Viewport `json:"viewport,omitempty"`
+}
+
 type UpdateMindMapRequest struct {
-	Title    string `json:"title"`
-	IsPublic *bool  `json:"isPublic"`
+	Title    string           `json:"title"`
+	IsPublic *bool            `json:"isPublic"`
+	JsonData *json.RawMessage `json:"jsonData"`
 }
 
 func (h *Handler) Generate(c *gin.Context) {
@@ -313,10 +351,155 @@ func (h *Handler) UpdateMindMap(c *gin.Context) {
 		isPublicParam = *req.IsPublic
 	}
 
+	jsonDataParam := m.JsonData
+	var auditMeta []byte
+
+	if req.JsonData != nil {
+		// 1. Limit raw size (500 KB)
+		if len(*req.JsonData) > 500*1024 {
+			response.BadRequest(c, "Tamanho do JSON excede o limite máximo permitido de 500KB.", nil)
+			return
+		}
+
+		// 2. Parse JSON Data
+		var data MindMapData
+		if err := json.Unmarshal(*req.JsonData, &data); err != nil {
+			response.BadRequest(c, "Formato do jsonData inválido: "+err.Error(), nil)
+			return
+		}
+
+		// 3. Structural checks
+		if len(data.Nodes) == 0 {
+			response.BadRequest(c, "O mapa mental deve conter pelo menos um nó.", nil)
+			return
+		}
+		if len(data.Nodes) > 150 {
+			response.BadRequest(c, "O mapa mental não pode conter mais de 150 nós.", nil)
+			return
+		}
+
+		// Validate root
+		var rootNode *AINode
+		rootCount := 0
+		for idx, n := range data.Nodes {
+			if n.ID == "root" {
+				rootNode = &data.Nodes[idx]
+				rootCount++
+			}
+		}
+		if rootCount != 1 {
+			response.BadRequest(c, fmt.Sprintf("Deve existir exatamente um nó principal (root), foram encontrados %d.", rootCount), nil)
+			return
+		}
+		if rootNode.ParentID != nil && *rootNode.ParentID != "" {
+			response.BadRequest(c, "O nó raiz principal (root) não pode possuir parentId.", nil)
+			return
+		}
+
+		// Validate other nodes
+		idMap := make(map[string]bool)
+		for _, n := range data.Nodes {
+			if n.ID == "" {
+				response.BadRequest(c, "Todos os nós devem conter um identificador (id) válido.", nil)
+				return
+			}
+			if idMap[n.ID] {
+				response.BadRequest(c, "Identificador de nó duplicado encontrado: "+n.ID, nil)
+				return
+			}
+			idMap[n.ID] = true
+
+			if n.Title == "" || len(strings.TrimSpace(n.Title)) == 0 {
+				response.BadRequest(c, "O título do nó '"+n.ID+"' não pode estar vazio.", nil)
+				return
+			}
+			if len(n.Title) > 150 {
+				response.BadRequest(c, "O título do nó '"+n.Title+"' excede o limite de 150 caracteres.", nil)
+				return
+			}
+			if len(n.Content) > 2000 {
+				response.BadRequest(c, "O conteúdo do nó '"+n.Title+"' excede o limite de 2000 caracteres.", nil)
+				return
+			}
+
+			// Non-root parent validation
+			if n.ID != "root" {
+				if n.ParentID == nil || *n.ParentID == "" {
+					response.BadRequest(c, "O nó '"+n.Title+"' deve possuir um parentId.", nil)
+					return
+				}
+				parentExists := false
+				for _, parent := range data.Nodes {
+					if parent.ID == *n.ParentID {
+						parentExists = true
+						break
+					}
+				}
+				if !parentExists {
+					response.BadRequest(c, "O nó '"+n.Title+"' aponta para um nó pai inexistente: '"+*n.ParentID+"'.", nil)
+					return
+				}
+			}
+		}
+
+		// 4. Edges checks
+		for _, e := range data.Edges {
+			if !idMap[e.Source] {
+				response.BadRequest(c, "A conexão aponta para uma origem inexistente: '"+e.Source+"'.", nil)
+				return
+			}
+			if !idMap[e.Target] {
+				response.BadRequest(c, "A conexão aponta para um destino inexistente: '"+e.Target+"'.", nil)
+				return
+			}
+		}
+
+		// 5. Cycle Detection
+		for _, n := range data.Nodes {
+			visited := make(map[string]bool)
+			curr := n.ID
+			for curr != "" && curr != "root" {
+				if visited[curr] {
+					response.BadRequest(c, "Erro estrutural: o mapa mental contém ciclos direcionados.", nil)
+					return
+				}
+				visited[curr] = true
+
+				found := false
+				for _, parentNode := range data.Nodes {
+					if parentNode.ID == curr {
+						if parentNode.ParentID != nil {
+							curr = *parentNode.ParentID
+						} else {
+							curr = ""
+						}
+						found = true
+						break
+					}
+				}
+				if !found {
+					break
+				}
+			}
+		}
+
+		jsonDataParam = *req.JsonData
+		auditMeta, _ = json.Marshal(map[string]interface{}{
+			"nodesCount":      len(data.Nodes),
+			"edgesCount":      len(data.Edges),
+			"changedByEditor": true,
+		})
+	} else {
+		auditMeta, _ = json.Marshal(map[string]interface{}{
+			"title":     titleParam,
+			"is_public": isPublicParam,
+		})
+	}
+
 	updated, err := h.queries.UpdateMindMapData(c.Request.Context(), database.UpdateMindMapDataParams{
 		ID:       id,
 		Title:    titleParam,
-		JsonData: m.JsonData,
+		JsonData: jsonDataParam,
 		IsPublic: isPublicParam,
 		Status:   m.Status,
 	})
@@ -326,14 +509,13 @@ func (h *Handler) UpdateMindMap(c *gin.Context) {
 	}
 
 	// Audit log
-	meta, _ := json.Marshal(map[string]interface{}{"title": updated.Title, "is_public": updated.IsPublic})
 	_, _ = h.queries.CreateAuditLog(c.Request.Context(), database.CreateAuditLogParams{
 		ActorUserID:    userID,
 		OrganizationID: orgID,
 		Action:         "MIND_MAP_UPDATED",
 		EntityType:     "mind_maps",
 		EntityID:       id,
-		Metadata:       meta,
+		Metadata:       auditMeta,
 		Ip:             pgtype.Text{String: c.ClientIP(), Valid: true},
 		UserAgent:      pgtype.Text{String: c.GetHeader("User-Agent"), Valid: true},
 	})

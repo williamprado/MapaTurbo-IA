@@ -154,12 +154,12 @@ export default function ViewMindMap() {
           <h1 className="text-2xl font-bold text-slate-100 mt-1">🧠 {map.title}</h1>
           <p className="text-slate-400 text-xs mt-0.5">Origem: <span className="uppercase text-purple-400 font-bold">{map.source_type}</span></p>
         </div>
-        <button
-          onClick={() => alert('O Editor Visual com React Flow e interações completas está planejado para a Fase 4!')}
+        <Link
+          to={`/app/maps/${id}/editor`}
           className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-slate-100 font-bold text-xs rounded-xl transition-all cursor-pointer shadow-lg"
         >
-          👁️ Abrir Editor Visual (Placeholder)
-        </button>
+          👁️ Abrir Editor Visual
+        </Link>
       </div>
 
       {/* Summary Card */}

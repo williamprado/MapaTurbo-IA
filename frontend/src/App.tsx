@@ -16,6 +16,7 @@ import Settings from './pages/app/Settings';
 import ListMindMaps from './pages/app/ListMindMaps';
 import CreateMindMap from './pages/app/CreateMindMap';
 import ViewMindMap from './pages/app/ViewMindMap';
+import MindMapEditor from './pages/app/MindMapEditor';
 
 // Admin pages
 import AdminDashboard from './pages/admin/AdminDashboard';
@@ -69,6 +70,7 @@ export default function App() {
           <Route path="maps" element={<ListMindMaps />} />
           <Route path="maps/new" element={<CreateMindMap />} />
           <Route path="maps/:id" element={<ViewMindMap />} />
+          <Route path="maps/:id/editor" element={<MindMapEditor />} />
           <Route path="billing" element={<Billing />} />
           <Route path="settings" element={<Settings />} />
         </Route>

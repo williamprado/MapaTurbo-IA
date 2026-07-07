@@ -134,3 +134,12 @@ curl -X GET http://localhost:8080/auth/me \
   -H "Authorization: Bearer <SEU_TOKEN_JWT>"
 ```
 Retorna o perfil autenticado com cargo global `SUPER_ADMIN` e as organizações pertencentes.
+
+---
+
+## 📖 Documentação de Testes Detalhada
+Para testar e validar de ponta a ponta cada uma das fases do projeto:
+* **Validação Runtime**: [docs/runtime-validation.md](file:///I:/MapaTurbo%20IA/docs/runtime-validation.md)
+* **Geração por IA & Créditos**: [docs/ai-generation-validation.md](file:///I:/MapaTurbo%20IA/docs/ai-generation-validation.md)
+* **Editor Visual React Flow**: [docs/mindmap-editor-validation.md](file:///I:/MapaTurbo%20IA/docs/mindmap-editor-validation.md)
+

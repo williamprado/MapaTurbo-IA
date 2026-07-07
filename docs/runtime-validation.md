@@ -125,3 +125,27 @@ Acesse o console em http://localhost:9001 (User: `mapaturbo`, Pass: `mapaturbo_p
 ### 7. Validação de Faturamento & Webhooks Asaas
 Consulte o guia detalhado em `docs/payments-validation.md` para testar os endpoints de faturamento localmente simulando as requisições de webhook do Asaas.
 
+### 8. Validação do Editor de Mapas Mentais (Fase 3B)
+* **Salvar alterações do canvas (PATCH)**:
+  ```bash
+  curl -X PATCH http://localhost:8080/mindmaps/<MINDMAP_ID> \
+    -H "Authorization: Bearer <TOKEN>" \
+    -H "X-Organization-ID: <ORG>" \
+    -H "Content-Type: application/json" \
+    -d '{
+      "jsonData": {
+        "title": "Mitose",
+        "centralTopic": "Mitose",
+        "summary": "Divisão celular",
+        "nodes": [
+          {"id": "root", "parentId": null, "title": "Mitose", "content": "Divisão celular", "level": 0, "order": 0, "position": {"x": 100, "y": 300}},
+          {"id": "node_1", "parentId": "root", "title": "Prófase", "content": "Condensação", "level": 1, "order": 0, "position": {"x": 420, "y": 300}}
+        ],
+        "edges": [
+          {"id": "edge-root-node_1", "source": "root", "target": "node_1"}
+        ]
+      }
+    }'
+  ```
+  O backend valida a existência dos nós apontados por `edges`, a presença única do nó `root`, a ausência de ciclos e limites de quantidade.
+
