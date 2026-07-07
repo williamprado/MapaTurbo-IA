@@ -6,12 +6,16 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"go.uber.org/zap"
 	"mapaturbo-ia/internal/database"
+	"mapaturbo-ia/pkg/logger"
+	"mapaturbo-ia/pkg/queue"
 	"mapaturbo-ia/pkg/response"
 	"mapaturbo-ia/pkg/storage"
 )
@@ -51,6 +55,20 @@ func (h *Handler) Upload(c *gin.Context) {
 	file, err := c.FormFile("file")
 	if err != nil {
 		response.BadRequest(c, "File is required", err.Error())
+		return
+	}
+
+	// Validate file size (20MB limit)
+	if file.Size > 20*1024*1024 {
+		response.BadRequest(c, "O arquivo excede o limite máximo permitido de 20MB.", nil)
+		return
+	}
+
+	// Validate MIME type / Extension
+	mime := strings.ToLower(file.Header.Get("Content-Type"))
+	isPDF := mime == "application/pdf" || strings.HasSuffix(strings.ToLower(file.Filename), ".pdf")
+	if !isPDF {
+		response.BadRequest(c, "Apenas arquivos PDF são permitidos.", nil)
 		return
 	}
 
@@ -96,6 +114,14 @@ func (h *Handler) Upload(c *gin.Context) {
 		response.InternalServerError(c, "Failed to record upload in database: "+err.Error())
 		return
 	}
+
+	// Enqueue Asynq task to process PDF upload
+	payloadBytes, _ := json.Marshal(map[string]string{"id": uuidToString(upload.ID)})
+	_, err = queue.EnqueueTask("process_pdf_upload", payloadBytes)
+	if err != nil {
+		logger.Log.Error("Failed to enqueue PDF processing task", zap.Error(err))
+	}
+
 
 	// 5. Create Audit Log
 	meta, _ := json.Marshal(map[string]interface{}{

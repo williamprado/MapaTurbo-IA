@@ -6,12 +6,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/pgvector/pgvector-go"
 	"mapaturbo-ia/internal/ai/domain"
 	"mapaturbo-ia/internal/ai/providers/openai"
 	"mapaturbo-ia/internal/database"
@@ -111,10 +113,108 @@ func (w *Worker) ProcessGenerationTask(ctx context.Context, t *asynq.Task) error
 	}
 
 	// 4. Parse request parameters
+	var genTitle string
+	var genOptions GenerateOptions
+	var promptContent string
+	var sourceType string
+	var sourceUploadID pgtype.UUID
+
 	var genReq GenerateRequest
-	if err := json.Unmarshal(job.Input, &genReq); err != nil {
-		w.markJobFailed(ctx, jobID, job.UserID, job.OrganizationID, "Erro ao analisar parâmetros de entrada do job.")
-		return nil
+
+	if job.Type == "GENERATE_MAP_PDF" {
+		type PdfGenerationInput struct {
+			UploadID string          `json:"uploadId"`
+			Query    string          `json:"query"`
+			Options  GenerateOptions `json:"options"`
+		}
+		var pdfInput PdfGenerationInput
+		if err := json.Unmarshal(job.Input, &pdfInput); err != nil {
+			w.markJobFailed(ctx, jobID, job.UserID, job.OrganizationID, "Erro ao analisar parâmetros de PDF do job.")
+			return nil
+		}
+		genOptions = pdfInput.Options
+		sourceType = "PDF"
+
+		var upUUID pgtype.UUID
+		if err := upUUID.Scan(pdfInput.UploadID); err != nil {
+			w.markJobFailed(ctx, jobID, job.UserID, job.OrganizationID, "ID do upload associado inválido.")
+			return nil
+		}
+		sourceUploadID = upUUID
+
+		// Check document source status
+		docSrc, err := w.queries.GetDocumentSourceByUpload(ctx, upUUID)
+		if err != nil {
+			w.markJobFailed(ctx, jobID, job.UserID, job.OrganizationID, "Fonte de documento RAG não encontrada.")
+			return nil
+		}
+		if docSrc.Status != "READY" {
+			w.markJobFailed(ctx, jobID, job.UserID, job.OrganizationID, "O documento PDF ainda está sendo processado.")
+			return nil
+		}
+
+		genTitle = docSrc.Title
+
+		var chunksContext []string
+		openaiProv := openai.NewProvider(decryptedApiKey, dbProvider.BaseUrl.String)
+
+		if pdfInput.Query != "" {
+			// Search similar chunks using PGVector
+			emb, err := openaiProv.GetEmbedding(ctx, pdfInput.Query)
+			if err != nil {
+				w.markJobFailed(ctx, jobID, job.UserID, job.OrganizationID, "Falha ao gerar embedding para consulta: "+err.Error())
+				return nil
+			}
+			similarChunks, err := w.queries.SearchSimilarChunks(ctx, database.SearchSimilarChunksParams{
+				QueryEmbedding: pgvector.NewVector(emb),
+				OrganizationID: job.OrganizationID,
+				UploadID:       upUUID,
+				Limit:          10,
+			})
+			if err != nil {
+				w.markJobFailed(ctx, jobID, job.UserID, job.OrganizationID, "Falha ao buscar trechos relevantes no banco vetorial.")
+				return nil
+			}
+
+			for _, c := range similarChunks {
+				chunksContext = append(chunksContext, c.Content)
+			}
+		} else {
+			// Retrieve first 12 chunks
+			allChunks, err := w.queries.GetDocumentChunksBySource(ctx, database.GetDocumentChunksBySourceParams{
+				DocumentSourceID: docSrc.ID,
+				Limit:            12,
+			})
+			if err != nil {
+				w.markJobFailed(ctx, jobID, job.UserID, job.OrganizationID, "Falha ao ler blocos do documento.")
+				return nil
+			}
+
+			for _, c := range allChunks {
+				chunksContext = append(chunksContext, c.Content)
+			}
+		}
+
+		if len(chunksContext) == 0 {
+			w.markJobFailed(ctx, jobID, job.UserID, job.OrganizationID, "O documento PDF está vazio ou não possui blocos vetoriais válidos.")
+			return nil
+		}
+
+		contextText := strings.Join(chunksContext, "\n---\n")
+		if pdfInput.Query != "" {
+			promptContent = fmt.Sprintf("Você é um especialista em estruturação de mapas mentais. Analise o seguinte conteúdo extraído de um documento PDF filtrado pelo tema '%s':\n\n%s\n\nCrie um mapa mental focado no tema '%s' usando as informações fornecidas.", pdfInput.Query, contextText, pdfInput.Query)
+		} else {
+			promptContent = fmt.Sprintf("Você é um especialista em estruturação de mapas mentais. Analise o seguinte conteúdo extraído de um documento PDF:\n\n%s\n\nCrie um mapa mental focado no tema central e nos tópicos principais abordados nesse texto.", contextText)
+		}
+	} else {
+		if err := json.Unmarshal(job.Input, &genReq); err != nil {
+			w.markJobFailed(ctx, jobID, job.UserID, job.OrganizationID, "Erro ao analisar parâmetros de entrada do job.")
+			return nil
+		}
+		genTitle = genReq.Title
+		genOptions = genReq.Options
+		sourceType = genReq.Type
+		promptContent = genReq.Content
 	}
 
 	// 5. Invoke AI generation method
@@ -128,12 +228,12 @@ func (w *Worker) ProcessGenerationTask(ctx context.Context, t *asynq.Task) error
 	}
 
 	input := domain.GenerateMindMapInput{
-		Type:     genReq.Type,
-		Title:    genReq.Title,
-		Content:  genReq.Content,
-		Depth:    genReq.Options.Depth,
-		Language: genReq.Options.Language,
-		Style:    genReq.Options.Style,
+		Type:     sourceType,
+		Title:    genTitle,
+		Content:  promptContent,
+		Depth:    genOptions.Depth,
+		Language: genOptions.Language,
+		Style:    genOptions.Style,
 	}
 
 	logger.Log.Info("Starting AI generation with provider", 
@@ -207,15 +307,21 @@ func (w *Worker) ProcessGenerationTask(ctx context.Context, t *asynq.Task) error
 
 	// A. Create Mind Map record
 	jsonBytes, _ := json.Marshal(aiResult)
-	var mindMapID pgtype.UUID
-	err = tx.QueryRow(ctx,
-		`INSERT INTO mind_maps (organization_id, user_id, title, source_type, status, json_data, is_public)
-		 VALUES ($1, $2, $3, $4, 'READY', $5, false) RETURNING id`,
-		job.OrganizationID, job.UserID, aiResult.Title, genReq.Type, jsonBytes,
-	).Scan(&mindMapID)
+	qtx := w.queries.WithTx(tx)
+	mindMap, err := qtx.CreateMindMap(ctx, database.CreateMindMapParams{
+		OrganizationID: job.OrganizationID,
+		UserID:         job.UserID,
+		Title:          aiResult.Title,
+		SourceType:     sourceType,
+		SourceUploadID: sourceUploadID,
+		Status:         "READY",
+		JsonData:       jsonBytes,
+		IsPublic:       false,
+	})
 	if err != nil {
 		return err
 	}
+	mindMapID := mindMap.ID
 
 	// B. Subtract credits balance
 	_, err = tx.Exec(ctx,

@@ -163,3 +163,28 @@ func (q *Queries) ListUploadsByOrganization(ctx context.Context, arg ListUploads
 	}
 	return items, nil
 }
+
+const updateUploadStatus = `-- name: UpdateUploadStatus :one
+UPDATE uploads
+SET status = $2, updated_at = CURRENT_TIMESTAMP
+WHERE id = $1
+RETURNING id, status, updated_at
+`
+
+type UpdateUploadStatusParams struct {
+	ID     pgtype.UUID
+	Status string
+}
+
+type UpdateUploadStatusRow struct {
+	ID        pgtype.UUID
+	Status    string
+	UpdatedAt pgtype.Timestamptz
+}
+
+func (q *Queries) UpdateUploadStatus(ctx context.Context, arg UpdateUploadStatusParams) (UpdateUploadStatusRow, error) {
+	row := q.db.QueryRow(ctx, updateUploadStatus, arg.ID, arg.Status)
+	var i UpdateUploadStatusRow
+	err := row.Scan(&i.ID, &i.Status, &i.UpdatedAt)
+	return i, err
+}

@@ -198,6 +198,128 @@ func (h *Handler) Generate(c *gin.Context) {
 	})
 }
 
+type GenerateFromUploadRequest struct {
+	UploadID string          `json:"uploadId" validate:"required,uuid"`
+	Query    string          `json:"query"`
+	Options  GenerateOptions `json:"options"`
+}
+
+func (h *Handler) GenerateFromUpload(c *gin.Context) {
+	var req GenerateFromUploadRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid input data", err.Error())
+		return
+	}
+
+	if err := validator.Validate.Struct(req); err != nil {
+		response.BadRequest(c, "Validation failed", validator.FormatValidationError(err))
+		return
+	}
+
+	orgIDVal, exists := c.Get("org_id")
+	if !exists {
+		response.BadRequest(c, "Organization context required", nil)
+		return
+	}
+	orgID := orgIDVal.(pgtype.UUID)
+
+	userIDStr, exists := c.Get("user_id")
+	if !exists {
+		response.Unauthorized(c, "Authentication required")
+		return
+	}
+	var userID pgtype.UUID
+	_ = userID.Scan(userIDStr)
+
+	// 1. Fetch upload details & check status and tenant isolation
+	var upUUID pgtype.UUID
+	_ = upUUID.Scan(req.UploadID)
+
+	upload, err := h.queries.GetUploadByID(c.Request.Context(), upUUID)
+	if err != nil {
+		response.NotFound(c, "Arquivo de upload não encontrado.")
+		return
+	}
+
+	if uuidToString(upload.OrganizationID) != uuidToString(orgID) {
+		response.Forbidden(c, "Você não possui permissão para usar este arquivo.")
+		return
+	}
+
+	if upload.Status != "PROCESSED" {
+		response.BadRequest(c, "O arquivo PDF ainda está sendo processado. Aguarde a conclusão.", nil)
+		return
+	}
+
+	// 2. Retrieve action price & balance check
+	actionKey := "GENERATE_MAP_PDF"
+	var creditsCost int32 = 15 // PDF cost fallback
+	err = h.db.QueryRow(c.Request.Context(),
+		"SELECT credits_cost FROM ai_action_prices WHERE action_key = $1 AND is_active = true LIMIT 1",
+		actionKey,
+	).Scan(&creditsCost)
+	if err != nil {
+		creditsCost = 15
+	}
+
+	var currentBalance int32 = 0
+	err = h.db.QueryRow(c.Request.Context(),
+		"SELECT balance FROM ai_credit_balances WHERE organization_id = $1 LIMIT 1",
+		orgID,
+	).Scan(&currentBalance)
+	if err != nil {
+		response.BadRequest(c, "Organização não possui saldo de créditos inicializado.", nil)
+		return
+	}
+
+	if currentBalance < creditsCost {
+		response.BadRequest(c, "Saldo de créditos insuficiente para realizar a geração.", nil)
+		return
+	}
+
+	// 3. Create generation job
+	inputJSON, _ := json.Marshal(req)
+	job, err := h.queries.CreateGenerationJob(c.Request.Context(), database.CreateGenerationJobParams{
+		OrganizationID: orgID,
+		UserID:         userID,
+		Type:           actionKey,
+		Status:         "PENDING",
+		Input:          inputJSON,
+		CreditsCost:    creditsCost,
+		StartedAt:      pgtype.Timestamptz{Valid: false},
+	})
+	if err != nil {
+		response.InternalServerError(c, "Erro ao registrar job de geração no banco.")
+		return
+	}
+
+	// 4. Enqueue task in Asynq background queue
+	taskPayload, _ := json.Marshal(gin.H{
+		"id": uuidToString(job.ID),
+	})
+	_, err = queue.EnqueueTask("generate_mindmap", taskPayload)
+	if err != nil {
+		fmt.Printf("Warning: failed to queue generate_mindmap: %v\n", err)
+	}
+
+	// Audit Log
+	_, _ = h.queries.CreateAuditLog(c.Request.Context(), database.CreateAuditLogParams{
+		ActorUserID:    userID,
+		OrganizationID: orgID,
+		Action:         "AI_GENERATION_REQUESTED",
+		EntityType:     "generation_jobs",
+		EntityID:       job.ID,
+		Metadata:       inputJSON,
+		Ip:             pgtype.Text{String: c.ClientIP(), Valid: true},
+		UserAgent:      pgtype.Text{String: c.GetHeader("User-Agent"), Valid: true},
+	})
+
+	response.Success(c, http.StatusCreated, "Geração de mapa mental por PDF iniciada", gin.H{
+		"jobId":  uuidToString(job.ID),
+		"status": job.Status,
+	})
+}
+
 func (h *Handler) GetJob(c *gin.Context) {
 	idStr := c.Param("id")
 	var id pgtype.UUID

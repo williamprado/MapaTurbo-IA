@@ -149,3 +149,31 @@ Consulte o guia detalhado em `docs/payments-validation.md` para testar os endpoi
   ```
   O backend valida a existência dos nós apontados por `edges`, a presença única do nó `root`, a ausência de ciclos e limites de quantidade.
 
+### 9. Validação de PDF & RAG com PGVector (Fase 3C)
+* **Ingestão de PDF**:
+  Faça o upload do arquivo PDF textual para o servidor local:
+  ```bash
+  curl -X POST http://localhost:8080/uploads \
+    -H "Authorization: Bearer <TOKEN>" \
+    -H "X-Organization-ID: <ORG>" \
+    -F "file=@/caminho/para/documento.pdf"
+  ```
+* **Gerar Mapa a partir do PDF**:
+  ```bash
+  curl -X POST http://localhost:8080/mindmaps/generate-from-upload \
+    -H "Authorization: Bearer <TOKEN>" \
+    -H "X-Organization-ID: <ORG>" \
+    -H "Content-Type: application/json" \
+    -d '{
+      "uploadId": "<UPLOAD_UUID>",
+      "query": "Mitose",
+      "options": {
+        "depth": 3,
+        "language": "pt-BR",
+        "style": "study"
+      }
+    }'
+  ```
+  Consulte o guia completo em `docs/pdf-rag-validation.md` para mais informações.
+
+

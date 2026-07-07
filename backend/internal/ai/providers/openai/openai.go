@@ -178,3 +178,57 @@ Regras de Schema:
 	result.RawPayload = rawJSON
 	return &result, nil
 }
+
+func (p *Provider) GetEmbedding(ctx context.Context, text string) ([]float32, error) {
+	if p.apiKey == "" {
+		return nil, errors.New("OpenAI API Key is missing")
+	}
+
+	url := fmt.Sprintf("%s/embeddings", p.baseURL)
+	payload := map[string]interface{}{
+		"input": text,
+		"model": "text-embedding-3-small",
+	}
+
+	jsonBytes, err := json.Marshal(payload)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(jsonBytes))
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", p.apiKey))
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{Timeout: 15 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("OpenAI embedding API error status %d: %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	var response struct {
+		Data []struct {
+			Embedding []float32 `json:"embedding"`
+		} `json:"data"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
+		return nil, err
+	}
+
+	if len(response.Data) == 0 {
+		return nil, errors.New("no embedding data returned from OpenAI")
+	}
+
+	return response.Data[0].Embedding, nil
+}
+

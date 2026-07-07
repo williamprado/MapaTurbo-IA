@@ -151,6 +151,7 @@ func main() {
 
 			// Mindmaps routes
 			tenantGroup.POST("/mindmaps/generate", mindmapHandler.Generate)
+			tenantGroup.POST("/mindmaps/generate-from-upload", mindmapHandler.GenerateFromUpload)
 			tenantGroup.GET("/generation-jobs/:id", mindmapHandler.GetJob)
 			tenantGroup.GET("/generation-jobs", mindmapHandler.ListJobs)
 			tenantGroup.GET("/mindmaps", mindmapHandler.ListMindMaps)

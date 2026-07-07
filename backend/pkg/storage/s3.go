@@ -71,3 +71,8 @@ func (s *S3Client) GetFileURL(ctx context.Context, key string, expires time.Dura
 	}
 	return presignedURL.String(), nil
 }
+
+func (s *S3Client) GetObject(ctx context.Context, key string) (io.ReadCloser, error) {
+	return s.client.GetObject(ctx, s.bucket, key, minio.GetObjectOptions{})
+}
+
