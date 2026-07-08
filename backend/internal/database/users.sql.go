@@ -235,10 +235,10 @@ func (q *Queries) RevokeRefreshToken(ctx context.Context, tokenHash string) erro
 
 const updateUser = `-- name: UpdateUser :one
 UPDATE users
-SET name = COALESCE($2, name),
-    password_hash = COALESCE($3, password_hash),
-    status = COALESCE($4, status),
-    global_role = COALESCE($5, global_role),
+SET name = COALESCE(NULLIF($2, ''), name),
+    password_hash = COALESCE(NULLIF($3, ''), password_hash),
+    status = COALESCE(NULLIF($4, ''), status),
+    global_role = COALESCE(NULLIF($5, ''), global_role),
     last_login_at = COALESCE($6, last_login_at),
     email_verified_at = COALESCE($7, email_verified_at)
 WHERE id = $1
@@ -290,4 +290,20 @@ func (q *Queries) UpdateUser(ctx context.Context, arg UpdateUserParams) (UpdateU
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const updateLastLogin = `-- name: UpdateLastLogin :exec
+UPDATE users
+SET last_login_at = $2
+WHERE id = $1
+`
+
+type UpdateLastLoginParams struct {
+	ID          pgtype.UUID
+	LastLoginAt pgtype.Timestamptz
+}
+
+func (q *Queries) UpdateLastLogin(ctx context.Context, arg UpdateLastLoginParams) error {
+	_, err := q.db.Exec(ctx, updateLastLogin, arg.ID, arg.LastLoginAt)
+	return err
 }

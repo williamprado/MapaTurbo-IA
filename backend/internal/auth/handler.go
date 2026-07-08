@@ -274,9 +274,10 @@ func (h *Handler) Login(c *gin.Context) {
 		return
 	}
 
-	// Update last_login_at
+	// Update last_login_at (dedicated query; UpdateUser would blank other
+	// string fields since Go sends "" which COALESCE treats as non-NULL).
 	now := time.Now()
-	_, _ = h.queries.UpdateUser(c.Request.Context(), database.UpdateUserParams{
+	_ = h.queries.UpdateLastLogin(c.Request.Context(), database.UpdateLastLoginParams{
 		ID:          user.ID,
 		LastLoginAt: pgtype.Timestamptz{Time: now, Valid: true},
 	})

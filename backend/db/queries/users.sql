@@ -15,14 +15,19 @@ RETURNING id, email, name, global_role, status, created_at, updated_at;
 
 -- name: UpdateUser :one
 UPDATE users
-SET name = COALESCE($2, name),
-    password_hash = COALESCE($3, password_hash),
-    status = COALESCE($4, status),
-    global_role = COALESCE($5, global_role),
+SET name = COALESCE(NULLIF($2, ''), name),
+    password_hash = COALESCE(NULLIF($3, ''), password_hash),
+    status = COALESCE(NULLIF($4, ''), status),
+    global_role = COALESCE(NULLIF($5, ''), global_role),
     last_login_at = COALESCE($6, last_login_at),
     email_verified_at = COALESCE($7, email_verified_at)
 WHERE id = $1
 RETURNING id, email, name, global_role, status, last_login_at, email_verified_at, created_at, updated_at;
+
+-- name: UpdateLastLogin :exec
+UPDATE users
+SET last_login_at = $2
+WHERE id = $1;
 
 -- name: ListUsers :many
 SELECT id, email, name, global_role, status, last_login_at, created_at
