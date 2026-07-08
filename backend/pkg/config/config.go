@@ -3,6 +3,7 @@ package config
 import (
 	"log"
 	"os"
+	"reflect"
 
 	"github.com/spf13/viper"
 )
@@ -34,12 +35,11 @@ type Config struct {
 }
 
 func LoadConfig(path string) (*Config, error) {
-	viper.AddConfigPath(path)
-	viper.SetConfigName("")
 	viper.SetConfigType("env")
 
-	// Check if a specific file name config is needed, e.g., if we read .env
-	// We check for .env in the path
+	// Read an optional .env file when it exists (local development).
+	// In container/Swarm deployments there is usually no .env file and all
+	// configuration comes from OS environment variables instead.
 	envFile := path + "/.env"
 	if _, err := os.Stat(envFile); err == nil {
 		viper.SetConfigFile(envFile)
@@ -49,6 +49,13 @@ func LoadConfig(path string) (*Config, error) {
 	}
 
 	viper.AutomaticEnv()
+
+	// viper.AutomaticEnv() only feeds viper.Get(); it does NOT make Unmarshal
+	// pick up env-only keys. Without a .env file viper knows no keys, so
+	// Unmarshal would return an empty struct even though the variables exist
+	// in the environment. Explicitly bind every struct key so OS environment
+	// variables are always honored (e.g. Docker/Swarm/Portainer deployments).
+	bindEnvVars(reflect.TypeOf(Config{}))
 
 	var config Config
 	if err := viper.Unmarshal(&config); err != nil {
@@ -64,4 +71,15 @@ func LoadConfig(path string) (*Config, error) {
 	}
 
 	return &config, nil
+}
+
+// bindEnvVars binds each `mapstructure` tag of the given struct type to its
+// matching environment variable, so viper.Unmarshal honors OS env vars even
+// when no config file is present.
+func bindEnvVars(t reflect.Type) {
+	for i := 0; i < t.NumField(); i++ {
+		if tag := t.Field(i).Tag.Get("mapstructure"); tag != "" {
+			_ = viper.BindEnv(tag)
+		}
+	}
 }
