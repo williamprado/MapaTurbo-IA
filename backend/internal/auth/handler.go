@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -375,10 +376,7 @@ func uuidToString(u pgtype.UUID) string {
 	if !u.Valid {
 		return ""
 	}
-	// Scan UUID bytes to string representation
-	var str string
-	u.Scan(&str)
-	return str
+	return fmt.Sprintf("%x-%x-%x-%x-%x", u.Bytes[0:4], u.Bytes[4:6], u.Bytes[6:8], u.Bytes[8:10], u.Bytes[10:16])
 }
 
 func ctxOrFallback(ctx context.Context) context.Context {
