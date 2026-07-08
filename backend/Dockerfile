@@ -31,6 +31,7 @@ ENV TZ=America/Sao_Paulo
 ENV APP_ENV=production
 
 COPY --from=builder /out/app /app/app
+COPY --from=builder /app/db/migrations /app/db/migrations
 
 EXPOSE 8080
 
